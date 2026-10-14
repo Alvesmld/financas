@@ -516,7 +516,7 @@ def chat_mentor(payload: ChatPrompt):
 
         return {
             "resposta": resposta_final, 
-            "acao_executada": acacao_executada if 'acao_executada' in locals() else True,
+            "acao_executada": acao_executada if 'acao_executada' in locals() else True,
             "progresso": progresso,
             "status": status_proc
         }

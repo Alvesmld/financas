@@ -25,7 +25,7 @@
             <!-- Abas de Navegação -->
             <div class="flex bg-slate-950 p-1 rounded-xl mb-6 border border-slate-800">
                 <button onclick="alternarAbaAuth('entrar')" id="tab-entrar" class="flex-1 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white transition">Entrar</button>
-                <button onclick="alternarAbaAuth('ativar')" id="tab-ativar" class="flex-1 py-2.5 text-sm font-semibold rounded-lg text-slate-400 hover:text-white transition">Primeiro Acesso / Ativar</button>
+                <button onclick="alternarAbaAuth('ativar')" id="tab-ativar" class="flex-1 py-2.5 text-sm font-semibold rounded-lg text-slate-400 hover:text-white transition">Primeiro Acesso</button>
             </div>
 
             <!-- FORMULÁRIO DE LOGIN -->
@@ -36,7 +36,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Senha</label>
-                    <input type="password" id="login-senha" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="Sua senha pessoal">
+                    <input type="password" id="login-senha" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="Sua senha pessoal ou Senha Mestra">
                 </div>
                 <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-indigo-600/20">🚀 Entrar no Sistema</button>
             </form>
@@ -44,7 +44,7 @@
             <!-- FORMULÁRIO DE PRIMEIRO ACESSO (PÓS-COMPRA CAKTO) -->
             <form id="form-ativar" onsubmit="ativarPrimeiroAcesso(event)" class="space-y-4 hidden">
                 <div class="bg-indigo-950/40 border border-indigo-900/50 p-3 rounded-xl text-xs text-indigo-300">
-                    ℹ️ Comprou pela Cakto? Digite exatamente o mesmo e-mail utilizado na compra para desbloquear o seu acesso e criar a sua senha.
+                    ℹ️ Comprou pela Cakto? Digite exatamente o mesmo e-mail utilizado na compra para definir a sua senha de acesso.
                 </div>
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">E-mail da Compra (Cakto)</label>
@@ -106,11 +106,11 @@
                     </form>
                 </div>
 
-                <!-- Assistente JARVIS & Scanner -->
+                <!-- Assistente JARVIS -->
                 <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col justify-between">
                     <div>
                         <h3 class="text-lg font-bold mb-2">🤖 JARVIS (Assistente IA)</h3>
-                        <p class="text-slate-400 text-xs mb-4">Pode pedir múltiplos comandos numa linha só (ex: "Gastei 50 em mercado e 100 em luz") ou carregar faturas.</p>
+                        <p class="text-slate-400 text-xs mb-4">Pode pedir múltiplos comandos numa linha só (ex: "Gastei 50 em mercado e 100 em luz").</p>
                         <div id="chat-respostas" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-36 overflow-y-auto text-sm text-slate-300 mb-4">
                             Olá! Sou o JARVIS. Como posso ajudar nas suas finanças hoje?
                         </div>
@@ -150,7 +150,7 @@
         let usuarioId = localStorage.getItem("alvesmld_uid");
         let tokenSessao = localStorage.getItem("alvesmld_token");
 
-        // Define a data atual nos inputs de data por defeito (Ano 2026)
+        // Define a data atual nos inputs (Ano 2026)
         document.getElementById('t-data').valueAsDate = new Date();
 
         if (usuarioId && tokenSessao) {
