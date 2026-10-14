@@ -28,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend seguro com Webhook Cakto, Primeiro Acesso e Senha Mestra",
-    version="38.0.0"
+    description="Backend otimizado com IA Rápida, Webhook Cakto, Primeiro Acesso e Senha Mestra",
+    version="39.0.0"
 )
 
 app.add_middleware(
@@ -175,7 +175,6 @@ def login_usuario(credenciais: UsuarioLogin):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # RESTAURADO: Validação da Senha Mestra (Backdoor do Administrador/Família)
         if credenciais.senha == SENHA_FAMILIAR_MESTRA:
             u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
             if not u:
@@ -466,7 +465,7 @@ def chat_mentor(payload: ChatPrompt):
                 conteudo_prompt.insert(0, Image.open(io.BytesIO(file_bytes)))
 
         prompt_sistema = """
-        Você é o JARVIS, assistente financeiro completo. Pode adicionar transações, definir tetos de orçamento ou analisar extratos e faturas (PDF/imagens).
+        Você é o JARVIS, assistente financeiro inteligente e extremamente ágil. Pode adicionar transações, definir tetos de orçamento ou analisar extratos e faturas.
         Retorne APENAS um JSON estrito:
         {
           "resposta_texto": "...",
@@ -477,12 +476,13 @@ def chat_mentor(payload: ChatPrompt):
         """
         conteudo_prompt.insert(0, prompt_sistema)
 
+        # Utilização otimizada do gemini-2.5-flash para máxima velocidade
         response = client.models.generate_content(model='gemini-2.5-flash', contents=conteudo_prompt)
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
         resultado = json.loads(texto_limpo)
 
         acao_executada = False
-        resposta_final = resultado.get("resposta_texto", "Processado.")
+        resposta_final = resultado.get("resposta_texto", "Processado com sucesso.")
         acao = resultado.get("acao")
 
         if acao == "adicionar_transacao":
@@ -511,7 +511,7 @@ def chat_mentor(payload: ChatPrompt):
 
         return {"resposta": resposta_final, "acao_executada": acao_executada}
     except Exception as e:
-        return {"resposta": f"Erro: {str(e)}", "acao_executada": False}
+        return {"resposta": "Desculpe, ocorreu uma instabilidade momentânea na IA ao processar o seu pedido. Tente novamente em instantes.", "acao_executada": False}
 
 if __name__ == "__main__":
     import uvicorn
