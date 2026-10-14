@@ -122,7 +122,20 @@ app.add_middleware(
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "financas.db"))
+# Render's Persistent Disk is commonly mounted at /var/data. Explicit DATABASE_PATH
+# always wins; otherwise use the mounted disk when it exists.
+_render_disk = Path("/var/data")
+if os.getenv("DATABASE_PATH", "").strip():
+    DB_PATH = os.getenv("DATABASE_PATH").strip()
+elif _render_disk.is_dir() and os.access(_render_disk, os.W_OK):
+    DB_PATH = str(_render_disk / "financas.db")
+else:
+    DB_PATH = str(BASE_DIR / "financas.db")
+
+import logging
+logging.info("SQLite database path: %s", DB_PATH)
+if DB_PATH.startswith(str(BASE_DIR)):
+    logging.warning("SQLite está no diretório do app. Em hospedagem efêmera, os dados podem sumir após deploy/restart; configure Persistent Disk e DATABASE_PATH.")
 
 @app.get("/", include_in_schema=False)
 def servir_frontend():
@@ -690,6 +703,29 @@ def _data_transacao_ia(dados: dict, pergunta: str) -> str:
         return date.fromisoformat(valor[:10]).isoformat()
     except (ValueError, TypeError):
         return hoje.isoformat()
+
+
+@app.get("/api/health/storage")
+def status_storage():
+    """Diagnóstico seguro: informa o caminho e se o banco existe, sem expor dados."""
+    path = Path(DB_PATH)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            conn.execute("SELECT 1").fetchone()
+        writable = os.access(path.parent, os.W_OK)
+        exists = path.exists()
+        return {
+            "database_path": str(path),
+            "database_exists": exists,
+            "database_size_bytes": path.stat().st_size if exists else 0,
+            "directory_writable": writable,
+            "persistent_disk_hint": str(path).startswith("/var/data/"),
+            "warning": None if str(path).startswith("/var/data/") else "O banco não está no caminho comum do Persistent Disk do Render. Configure um disco montado e DATABASE_PATH.",
+        }
+    except Exception as exc:
+        logging.exception("Falha no diagnóstico do banco de dados")
+        raise HTTPException(status_code=500, detail=f"Falha ao acessar banco SQLite ({type(exc).__name__}). Confira DATABASE_PATH e o disco persistente no Render.")
 
 
 @app.get("/api/health/ia")

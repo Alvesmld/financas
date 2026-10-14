@@ -68,3 +68,19 @@ SQLite pode perder dados em novos deploys/restarts se o serviço não tiver disc
 - Antes de vender em escala, ainda é recomendável reforçar a autenticação de todas as rotas de dados com token de sessão. Algumas rotas legadas recebem `usuario_id` pela URL/corpo; não trate isso como segurança suficiente contra acesso indevido.
 - O sistema não integra automaticamente com bancos (Open Finance); a IA analisa apenas lançamentos que já estão no app ou documentos enviados.
 - Recomendações são baseadas nos lançamentos registrados. Se os dados estiverem incompletos, as conclusões também estarão incompletas.
+
+## Corrigir dados que somem após deploy (Render)
+
+Isso acontece porque o disco normal do serviço web do Render é efêmero. O SQLite precisa ficar em um **Persistent Disk**. Faça esta configuração no painel do Render:
+
+1. Abra o serviço backend e vá em **Disks** (ou adicione um Persistent Disk nas configurações do serviço).
+2. Crie um disco com **Mount Path** `/var/data` e tamanho suficiente. Não remova nem recrie esse disco depois, pois ele contém o banco.
+3. Em **Environment**, defina `DATABASE_PATH=/var/data/financas.db`.
+4. Salve e faça deploy. Este ZIP também detecta `/var/data` automaticamente quando o disco já está montado, mas manter `DATABASE_PATH` explícito é recomendado.
+5. Após o deploy, abra `https://SEU-SERVICO.onrender.com/api/health/storage`. O esperado é `persistent_disk_hint: true` e `database_path: /var/data/financas.db`.
+
+**Importante:** configurar o disco agora impede que novos dados sumam nos próximos deploys, mas não recupera automaticamente dados que já foram perdidos. Se ainda existir um `financas.db` antigo no serviço ou num backup, faça backup e copie-o para o disco persistente antes de começar a usar o novo banco. Não substitua um banco existente sem backup.
+
+## Diagnóstico da IA
+
+Abra `https://SEU-SERVICO.onrender.com/api/health/ia` para ver os provedores configurados e o endpoint `/api/health/storage` para conferir o banco. Se o Gemini mostrar limite de requisições esgotado, o código não consegue remover esse limite: configure um segundo provedor com credenciais e modelo válidos em `AI_PROVIDERS`, por exemplo `gemini,openai`. Ollama só funciona no Render se o endpoint estiver acessível de forma segura a partir do backend; `127.0.0.1` aponta para o próprio container do Render.
