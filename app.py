@@ -28,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend otimizado com IA Rápida, Webhook Cakto, Primeiro Acesso e Senha Mestra",
-    version="39.0.0"
+    description="Backend otimizado com suporte a multi-ações e progresso em lote",
+    version="40.0.0"
 )
 
 app.add_middleware(
@@ -440,7 +440,7 @@ def deletar_desejo(desejo_id: int, usuario_id: int = Query(...)):
 def chat_mentor(payload: ChatPrompt):
     uid = payload.usuario_id
     if not HAS_GEMINI_SDK:
-        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False}
+        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False, "progresso": 100}
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -452,7 +452,7 @@ def chat_mentor(payload: ChatPrompt):
             saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
             saldo = entradas - saidas
 
-        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido: {payload.pergunta}"]
+        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido em lote/linha: {payload.pergunta}"]
         
         if payload.ficheiro_base64:
             header, encoded = payload.ficheiro_base64.split(",", 1)
@@ -465,53 +465,67 @@ def chat_mentor(payload: ChatPrompt):
                 conteudo_prompt.insert(0, Image.open(io.BytesIO(file_bytes)))
 
         prompt_sistema = """
-        Você é o JARVIS, assistente financeiro inteligente e extremamente ágil. Pode adicionar transações, definir tetos de orçamento ou analisar extratos e faturas.
-        Retorne APENAS um JSON estrito:
+        Você é o JARVIS, assistente financeiro inteligente, ágil e capaz de processar múltiplos comandos e listas em uma única linha de texto.
+        Retorne APENAS um JSON estrito contendo uma lista de ações caso existam múltiplos pedidos, ou uma ação principal:
         {
           "resposta_texto": "...",
-          "acao": "adicionar_transacao" | "definir_orcamento" | "nenhuma",
-          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"},
-          "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}
+          "progresso_percentual": 100,
+          "status_processamento": "Concluído com sucesso",
+          "acoes": [
+            {"acao": "adicionar_transacao", "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"}},
+            {"acao": "definir_orcamento", "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}}
+          ]
         }
+        Se houver apenas uma ou nenhuma ação, utilize a lista vazia ou com 1 item em "acoes".
         """
         conteudo_prompt.insert(0, prompt_sistema)
 
-        # Utilização otimizada do gemini-2.5-flash para máxima velocidade
         response = client.models.generate_content(model='gemini-2.5-flash', contents=conteudo_prompt)
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
         resultado = json.loads(texto_limpo)
 
-        acao_executada = False
+        acoes = resultado.get("acoes", [])
         resposta_final = resultado.get("resposta_texto", "Processado com sucesso.")
-        acao = resultado.get("acao")
+        progresso = resultado.get("progresso_percentual", 100)
+        status_proc = resultado.get("status_processamento", "Concluído")
 
-        if acao == "adicionar_transacao":
-            d = resultado.get("dados_transacao", {})
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (uid, d.get("descricao", "Item"), float(d.get("valor", 0.0)), d.get("tipo", "saida"), d.get("categoria", "Outros"), d.get("data", str(date.today()))))
-                conn.commit()
-            acao_executada = True
-        elif acao == "definir_orcamento":
-            o = resultado.get("dados_orcamento", {})
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                cat = o.get("categoria", "Outros")
-                lim = float(o.get("limite_mensal", 0.0))
-                existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (uid, cat)).fetchone()
-                if existente:
-                    cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (lim, existente[0]))
-                else:
-                    cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (uid, cat, lim))
-                conn.commit()
-            acao_executada = True
+        acao_executada = False
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            for item in acoes:
+                tipo_acao = item.get("acao")
+                if tipo_acao == "adicionar_transacao":
+                    d = item.get("dados_transacao", {})
+                    cursor.execute("""
+                        INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (uid, d.get("descricao", "Item"), float(d.get("valor", 0.0)), d.get("tipo", "saida"), d.get("categoria", "Outros"), d.get("data", str(date.today()))))
+                    acao_executada = True
+                elif tipo_acao == "definir_orcamento":
+                    o = item.get("dados_orcamento", {})
+                    cat = o.get("categoria", "Outros")
+                    lim = float(o.get("limite_mensal", 0.0))
+                    existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (uid, cat)).fetchone()
+                    if existente:
+                        cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (lim, existente[0]))
+                    else:
+                        cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (uid, cat, lim))
+                    acao_executada = True
+            conn.commit()
 
-        return {"resposta": resposta_final, "acao_executada": acao_executada}
+        return {
+            "resposta": resposta_final, 
+            "acao_executada": acao_executada,
+            "progresso": progresso,
+            "status": status_proc
+        }
     except Exception as e:
-        return {"resposta": "Desculpe, ocorreu uma instabilidade momentânea na IA ao processar o seu pedido. Tente novamente em instantes.", "acao_executada": False}
+        return {
+            "resposta": "Desculpe, ocorreu uma instabilidade momentânea na IA ao processar múltiplos comandos. Tente novamente.", 
+            "acao_executada": False,
+            "progresso": 0,
+            "status": "Erro de processamento"
+        }
 
 if __name__ == "__main__":
     import uvicorn
