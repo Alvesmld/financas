@@ -1,329 +1,676 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Finanças Domésticas AI - ALVESMLD SaaS Master</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dashboard Finanças Domésticas - ALVESMLD</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-color: #0f172a; --card-bg: #1e293b; --input-bg: #334155;
+      --text-main: #f8fafc; --text-muted: #94a3b8; --primary: #3b82f6;
+      --ai-purple: #8b5cf6; --ai-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      --success: #10b981; --danger: #ef4444; --danger-bg: #fef2f2;
+      --border-color: #334155; --table-header-bg: #334155;
+      --radius: 16px; --radius-sm: 10px; --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    [data-theme="light"] {
+      --bg-color: #f8fafc; --card-bg: #ffffff; --input-bg: #fafafa;
+      --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb;
+      --border-color: #e2e8f0; --table-header-bg: #f1f5f9;
+      --shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.05);
+    }
+    body { background-color: var(--bg-color); color: var(--text-main); font-family: 'Plus Jakarta Sans', sans-serif; padding: 16px 10px; line-height: 1.5; }
+    .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; width: 100%; }
+
+    #auth-screen { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95); z-index: 20000; display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(8px); }
+    .auth-card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 24px; border-radius: var(--radius); width: 100%; max-width: 400px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px; }
+    .auth-card h2 { font-size: 1.3rem; font-weight: 800; text-align: center; color: var(--primary); }
+    .auth-tabs { display: flex; background: var(--input-bg); border-radius: var(--radius-sm); padding: 4px; }
+    .auth-tab { flex: 1; text-align: center; padding: 8px; font-weight: 700; font-size: 0.8rem; cursor: pointer; border-radius: 6px; color: var(--text-muted); }
+    .auth-tab.ativa { background: var(--card-bg); color: var(--text-main); }
+
+    #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 30000; display: flex; flex-direction: column; gap: 10px; max-width: 90vw; }
+    .toast { background: var(--card-bg); color: var(--text-main); border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: var(--radius-sm); box-shadow: 0 10px 20px rgba(0,0,0,0.15); font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+    .toast.sucesso { border-left-color: var(--success); }
+    .toast.erro { border-left-color: var(--danger); }
+
+    #header-app { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 14px 18px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border-color); flex-wrap: wrap; gap: 12px; }
+    #titulo-app { font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    .status-badge-ia { background: var(--ai-gradient); color: white; font-size: 0.6rem; padding: 3px 8px; border-radius: 20px; font-weight: 700; text-transform: uppercase; }
+
+    #perfil-usuario { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+    .btn-icon-header { background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    #secao-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .card-resumo { background: var(--card-bg); padding: 16px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px; position: relative; }
+    .icone-card { position: absolute; top: 16px; right: 16px; font-size: 1.1rem; opacity: 0.6; }
+    .rotulo-card { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+    .valor-card { font-size: 1.4rem; font-weight: 800; word-break: break-word; }
+    #card-entradas #valor-entradas { color: var(--success); }
+    #card-saidas #valor-saidas { color: var(--danger); }
+    #card-saldo #valor-saldo { color: var(--primary); }
+
+    .grid-duplo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media(max-width: 768px) { .grid-duplo { grid-template-columns: 1fr; } }
+
+    .painel-box { background: var(--card-bg); padding: 18px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border-color); width: 100%; overflow: hidden; }
+    .titulo-painel { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+
+    .secao-scanner-ia { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--card-bg) 100%); }
+    #scanner-loading { display: none; margin-top: 12px; align-items: center; gap: 12px; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; color: var(--ai-purple); }
+
+    .grid-desejos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+    .card-desejo { background: var(--input-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .lojas-comparacao-box { display: flex; flex-direction: column; gap: 6px; background: var(--card-bg); padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); }
+    .lojas-botoes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .btn-loja { font-size: 0.7rem; font-weight: 700; padding: 6px; border-radius: 6px; text-decoration: none; color: white; text-align: center; }
+    .btn-loja.ml { background-color: #ffe600; color: #333; }
+    .btn-loja.shopee { background-color: #ee4d2d; }
+
+    form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+    .grupo-input { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+    .grupo-input label { font-size: 0.75rem; font-weight: 700; }
+    .grupo-input input, .grupo-input select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.85rem; background-color: var(--input-bg); color: var(--text-main); outline: none; }
+    .linha-dupla-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+    button[type="submit"], .btn-acao { background-color: var(--primary); color: white; border: none; padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; width: 100%; }
+    .btn-excluir { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.7rem; }
+    .btn-analisar { background: var(--ai-gradient); color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; width: 100%; }
+
+    /* CHAT FLUENTE COM VOZ E PDF */
+    #bolinha-ia-container { position: fixed; bottom: 20px; right: 20px; z-index: 40000; display: flex; flex-direction: column; align-items: flex-end; }
+    #btn-bolinha-ia { width: 58px; height: 58px; border-radius: 50%; background: var(--ai-gradient); border: none; color: white; font-size: 1.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(139, 92, 246, 0.4); display: flex; align-items: center; justify-content: center; }
+    #janela-chat-ia { position: fixed; bottom: 90px; right: 20px; width: 360px; max-width: calc(100vw - 32px); height: 500px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 40001; display: none; flex-direction: column; overflow: hidden; }
+    .chat-header { background: var(--ai-gradient); color: white; padding: 12px 16px; font-weight: 800; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+    .chat-mensagens { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; }
+    .msg-chat { padding: 10px 14px; border-radius: 12px; max-width: 85%; word-break: break-word; }
+    .msg-chat.ia { background: var(--input-bg); color: var(--text-main); align-self: flex-start; border-left: 3px solid var(--ai-purple); }
+    .msg-chat.usuario { background: var(--primary); color: white; align-self: flex-end; }
+    .chat-footer { padding: 10px; background: var(--bg-color); border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px; }
+    .chat-footer-inputs { display: flex; gap: 6px; align-items: center; width: 100%; }
+    .chat-footer input[type="text"] { flex: 1; padding: 8px 10px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-main); outline: none; }
+    .btn-chat-acao { background: var(--input-bg); border: 1.5px solid var(--border-color); color: var(--text-main); width: 36px; height: 36px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .btn-chat-acao.ouvindo { background: var(--danger); color: white; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    .preview-ficheiro-chat { display: none; align-items: center; justify-content: space-between; background: var(--input-bg); padding: 4px 8px; border-radius: 6px; font-size: 0.7rem; color: var(--ai-purple); font-weight: 700; }
+
+    .tabela-responsive { width: 100%; overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
+    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 400px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
+    th { background-color: var(--table-header-bg); color: var(--text-muted); text-transform: uppercase; }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+<body>
 
-    <!-- MODAL DE AUTENTICAÇÃO / LOGIN / PRIMEIRO ACESSO -->
-    <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <div class="text-center mb-6">
-                <div class="inline-flex p-3 bg-indigo-600/10 text-indigo-400 rounded-2xl mb-3 text-2xl">🛡️</div>
-                <h2 class="text-2xl font-bold text-white">Acesso Restrito — ALVESMLD</h2>
-                <p class="text-slate-400 text-sm mt-1">Plataforma de Finanças Domésticas & IA</p>
-            </div>
-
-            <!-- Abas de Navegação -->
-            <div class="flex bg-slate-950 p-1 rounded-xl mb-6 border border-slate-800">
-                <button onclick="alternarAbaAuth('entrar')" id="tab-entrar" class="flex-1 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white transition">Entrar</button>
-                <button onclick="alternarAbaAuth('ativar')" id="tab-ativar" class="flex-1 py-2.5 text-sm font-semibold rounded-lg text-slate-400 hover:text-white transition">Primeiro Acesso / Ativar</button>
-            </div>
-
-            <!-- FORMULÁRIO DE LOGIN -->
-            <form id="form-login" onsubmit="fazerLogin(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">E-mail</label>
-                    <input type="email" id="login-email" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="seu@email.com">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Senha</label>
-                    <input type="password" id="login-senha" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="Sua senha pessoal">
-                </div>
-                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-indigo-600/20">🚀 Entrar no Sistema</button>
-            </form>
-
-            <!-- FORMULÁRIO DE PRIMEIRO ACESSO (PÓS-COMPRA CAKTO) -->
-            <form id="form-ativar" onsubmit="ativarPrimeiroAcesso(event)" class="space-y-4 hidden">
-                <div class="bg-indigo-950/40 border border-indigo-900/50 p-3 rounded-xl text-xs text-indigo-300">
-                    ℹ️ Comprou pela Cakto? Digite exatamente o mesmo e-mail utilizado na compra para desbloquear o seu acesso e criar a sua senha.
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">E-mail da Compra (Cakto)</label>
-                    <input type="email" id="ativar-email" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="email_da_compra@email.com">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Criar Nova Senha</label>
-                    <input type="password" id="ativar-senha" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" placeholder="Crie uma senha forte">
-                </div>
-                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3.5 rounded-xl transition shadow-lg shadow-emerald-600/20">🔑 Definir Senha e Aceder</button>
-            </form>
-            <div id="auth-mensagem" class="mt-4 text-center text-sm"></div>
+  <!-- CHAT FLUENTE COM VOZ E PDF/FOTO -->
+  <div id="bolinha-ia-container" style="display: none;">
+    <div id="janela-chat-ia">
+      <div class="chat-header">
+        <div>
+          <div><i class="fa-solid fa-headset"></i> JARVIS (SaaS Assistente)</div>
+          <div style="font-size: 0.6rem; opacity: 0.85;">Voz 🎙️, PDF/Fotos 📄</div>
         </div>
+        <button onclick="alternarJanelaChat()" style="background:none; border:none; color:white; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="chat-mensagens" id="chat-mensagens-corpo">
+        <div class="msg-chat ia"><span>Olá! Pode falar por voz, enviar PDFs/fotos ou registar transações.</span></div>
+      </div>
+      <div class="chat-footer">
+        <div class="preview-ficheiro-chat" id="preview-ficheiro-chat">
+          <span id="nome-ficheiro-chat"><i class="fa-solid fa-file"></i> Ficheiro anexado</span>
+          <button onclick="removerFicheiroChat()" style="background:none; border:none; color:var(--danger); cursor:pointer;"><i class="fa-solid fa-trash"></i></button>
+        </div>
+        <div class="chat-footer-inputs">
+          <input type="file" id="input-chat-file" accept="image/*,application/pdf" style="display: none;" onchange="aoSelecionarFicheiroChat(this)">
+          <button class="btn-chat-acao" onclick="document.getElementById('input-chat-file').click()" title="Anexar"><i class="fa-solid fa-paperclip"></i></button>
+          <button class="btn-chat-acao" id="btn-ouvir-voz" onclick="alternarGravacaoVoz()" title="Falar"><i class="fa-solid fa-microphone"></i></button>
+          <input type="text" id="input-chat-flutuante" placeholder="Digite ou fale...">
+          <button class="btn-chat-acao" id="btn-enviar-chat-flutuante" style="background:var(--ai-purple); color:white;"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+      </div>
+    </div>
+    <button id="btn-bolinha-ia" onclick="alternarJanelaChat()"><i class="fa-solid fa-comments"></i></button>
+  </div>
+
+  <!-- TELA DE LOGIN / LICENÇA -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h2><i class="fa-solid fa-shield-halved"></i> Acesso Restrito - ALVESMLD</h2>
+      <div class="auth-tabs">
+        <div class="auth-tab ativa" id="tab-login" onclick="alternarAuthTab('login')">Entrar</div>
+        <div class="auth-tab" id="tab-ativar" onclick="alternarAuthTab('ativar')">Ativar Licença Cakto</div>
+      </div>
+
+      <form id="form-auth-login">
+        <div class="grupo-input"><label>E-mail</label><input type="email" id="login-email" required autocomplete="email"></div>
+        <div class="grupo-input"><label>Senha</label><input type="password" id="login-senha" required autocomplete="current-password"></div>
+        <button type="submit"><i class="fa-solid fa-right-to-bracket"></i> Entrar no Sistema</button>
+      </form>
+
+      <form id="form-auth-ativar" style="display: none;">
+        <div class="grupo-input"><label>Chave da licença (opcional)</label><input type="text" id="lic-chave" placeholder="Se recebeu uma chave, informe aqui"><small style="color:var(--text-muted)">Comprou pela Cakto? Deixe em branco e use o mesmo e-mail da compra.</small></div>
+        <div class="grupo-input"><label>Seu Nome</label><input type="text" id="lic-nome" required></div>
+        <div class="grupo-input"><label>Seu E-mail</label><input type="email" id="lic-email" required></div>
+        <div class="grupo-input"><label>Criar Senha (mínimo 8 caracteres)</label><input type="password" id="lic-senha" minlength="8" required autocomplete="new-password"></div>
+        <button type="submit" style="background: var(--success);"><i class="fa-solid fa-key"></i> Ativar e Criar Conta</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <!-- DASHBOARD MASTER COMPLETO -->
+  <div class="container" id="app-dashboard" style="display: none;">
+    <header id="header-app">
+      <h1 id="titulo-app">
+        <span><i class="fa-solid fa-wallet"></i> Finanças Domésticas</span>
+        <span class="status-badge-ia">SaaS Pro Active</span>
+      </h1>
+      <div id="perfil-usuario">
+        <button id="btn-alternar-tema" class="btn-icon-header" title="Alternar Tema"><i class="fa-solid fa-sun"></i></button>
+        <span id="nome-usuario-logado">Usuário</span>
+        <button class="btn-excluir" style="padding: 6px 10px;" onclick="fazerLogout()"><i class="fa-solid fa-right-from-bracket"></i> Sair</button>
+      </div>
+    </header>
+
+    <!-- RESUMO -->
+    <section id="secao-resumo">
+      <div class="card-resumo" id="card-entradas"><i class="fa-solid fa-circle-arrow-down icone-card"></i><span class="rotulo-card">Entradas</span><span class="valor-card" id="valor-entradas">R$ 0,00</span></div>
+      <div class="card-resumo" id="card-saidas"><i class="fa-solid fa-circle-arrow-up icone-card"></i><span class="rotulo-card">Saídas</span><span class="valor-card" id="valor-saidas">R$ 0,00</span></div>
+      <div class="card-resumo" id="card-saldo"><i class="fa-solid fa-scale-balanced icone-card"></i><span class="rotulo-card">Saldo Atual</span><span class="valor-card" id="valor-saldo">R$ 0,00</span></div>
+    </section>
+
+    <!-- RECOMENDAÇÕES FINANCEIRAS -->
+    <section class="painel-box" id="painel-insights" style="border:1px solid var(--ai-purple);">
+      <h2 class="titulo-painel" style="color:var(--ai-purple)"><span><i class="fa-solid fa-lightbulb"></i> Diagnóstico inteligente da sua vida financeira</span>
+        <button type="button" class="btn-analisar" style="width:auto" onclick="carregarInsights()">Atualizar análise</button>
+      </h2>
+      <div id="lista-insights" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+        <div style="color:var(--text-muted);font-size:.85rem">Analisando seus lançamentos...</div>
+      </div>
+    </section>
+
+    <!-- SCANNER DE FOTO / PDF -->
+    <section class="painel-box secao-scanner-ia">
+      <h2 class="titulo-painel" style="color: var(--ai-purple);"><span><i class="fa-solid fa-file-arrow-up"></i> Scanner IA (Imagens & Faturas PDF)</span></h2>
+      <form id="form-scanner-foto" enctype="multipart/form-data">
+        <div class="linha-dupla-inputs">
+          <div class="grupo-input" style="flex: 2;"><label>Ficheiro (Imagem ou PDF)</label><input type="file" id="input-foto-fileiras" accept="image/*,application/pdf" required></div>
+          <div class="grupo-input" style="justify-content: flex-end;"><button type="submit" style="background: var(--ai-gradient);"><i class="fa-solid fa-wand-magic-sparkles"></i> Processar</button></div>
+        </div>
+      </form>
+      <div id="scanner-loading"><i class="fa-solid fa-spinner fa-spin"></i> <span>A IA está a processar o documento...</span></div>
+    </section>
+
+    <!-- ORÇAMENTOS E GRÁFICO -->
+    <div class="grid-duplo">
+      <section class="painel-box">
+        <h2 class="titulo-painel"><span><i class="fa-solid fa-chart-line"></i> Orçamentos & Tetos</span></h2>
+        <form id="form-orcamento">
+          <div class="linha-dupla-inputs">
+            <div class="grupo-input"><label>Categoria</label><select id="select-orcamento-cat"><option value="Moradia">Moradia</option><option value="Alimentação">Alimentação</option><option value="Transporte">Transporte</option><option value="Lazer">Lazer</option><option value="Outros">Outros</option></select></div>
+            <div class="grupo-input"><label>Teto (R$)</label><input type="number" id="input-orcamento-limite" step="0.01" required></div>
+          </div>
+          <button type="submit"><i class="fa-solid fa-plus"></i> Definir Teto</button>
+        </form>
+        <div id="container-orcamentos-cards" style="margin-top: 10px; display:flex; flex-direction:column; gap:6px;"></div>
+      </section>
+
+      <section class="painel-box">
+        <h2 class="titulo-painel"><span><i class="fa-solid fa-chart-pie"></i> Gastos por Categoria</span></h2>
+        <div style="height: 180px; position: relative;"><canvas id="canvas-grafico-geral"></canvas></div>
+      </section>
     </div>
 
-    <!-- CONTEÚDO PRINCIPAL (DASHBOARD) -->
-    <div id="app-conteudo" class="hidden flex-1 flex flex-col">
-        <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md px-6 py-4 flex justify-between items-center">
-            <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">ALVESMLD • Finanças Domésticas</h1>
-            <button onclick="sair()" class="bg-rose-600/20 text-rose-400 hover:bg-rose-600 hover:text-white px-4 py-2 rounded-xl text-sm font-semibold transition">Terminar Sessão</button>
-        </header>
+    <!-- PROJEÇÃO FINANCEIRA FUTURA -->
+    <section class="painel-box" style="border: 2px solid var(--primary);">
+      <h2 class="titulo-painel" style="color: var(--primary);"><span><i class="fa-solid fa-crystal-ball"></i> Projeção de Saldo Futuro</span></h2>
+      <div class="linha-dupla-inputs" style="margin-bottom: 12px;">
+        <div class="grupo-input"><label>Simular quantos meses à frente?</label><input type="number" id="input-meses-projecao" value="3" min="1" max="12"></div>
+        <div class="grupo-input" style="justify-content: flex-end;"><button type="button" onclick="carregarProjecao()"><i class="fa-solid fa-calculator"></i> Calcular Projeção</button></div>
+      </div>
+      <div id="resultado-projecao" style="font-size: 0.85rem; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm);">Clique em calcular para ver a projeção do saldo futuro.</div>
+    </section>
 
-        <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-            <!-- Cards de Resumo -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                    <p class="text-slate-400 text-sm font-medium">Saldo Atual</p>
-                    <h3 id="resumo-saldo" class="text-3xl font-bold mt-2 text-white">R$ 0,00</h3>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                    <p class="text-slate-400 text-sm font-medium">Total de Entradas</p>
-                    <h3 id="resumo-entradas" class="text-3xl font-bold mt-2 text-emerald-400">R$ 0,00</h3>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                    <p class="text-slate-400 text-sm font-medium">Total de Saídas</p>
-                    <h3 id="resumo-saidas" class="text-3xl font-bold mt-2 text-rose-400">R$ 0,00</h3>
-                </div>
+    <!-- LISTA DE DESEJOS COM COMPARADOR -->
+    <section class="painel-box" style="border: 2px solid var(--ai-purple);">
+      <h2 class="titulo-painel" style="color: var(--ai-purple);"><span><i class="fa-solid fa-cart-shopping"></i> Lista de Desejos & Comparador</span></h2>
+      <div class="grid-duplo">
+        <form id="form-desejo">
+          <div class="grupo-input"><label>Item</label><input type="text" id="input-desejo-titulo" required></div>
+          <div class="linha-dupla-inputs">
+            <div class="grupo-input"><label>Valor (R$)</label><input type="number" id="input-desejo-valor" step="0.01" required></div>
+            <div class="grupo-input"><label>Link</label><input type="url" id="input-desejo-link"></div>
+          </div>
+          <button type="submit" style="background: var(--ai-purple);"><i class="fa-solid fa-plus"></i> Adicionar Desejo</button>
+        </form>
+        <div class="grid-desejos" id="container-desejos-cards"></div>
+      </div>
+    </section>
+
+    <!-- EXTRATO -->
+    <section class="painel-box">
+      <h2 class="titulo-painel"><span><i class="fa-solid fa-list-check"></i> Extrato Completo</span></h2>
+      <div class="tabela-responsive">
+        <table>
+          <thead><tr><th>Descrição</th><th>Categoria</th><th>Data</th><th>Valor</th><th>Ações</th></tr></thead>
+          <tbody id="corpo-tabela-extrato"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const API_URL = '/api';
+    let usuarioLogado = null;
+    let tokenSessao = null;
+    let transacoesGerais = [];
+    let orcamentosLista = [];
+    let desejosLista = [];
+    let chartGeralInstancia = null;
+    let ficheiroChatBase64 = null;
+    let ficheiroChatMime = null;
+    let reconhecimentoVoz = null;
+    let estaGravandoVoz = false;
+
+    function mostrarToast(msg, tipo = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${tipo}`;
+      toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${msg}`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      verificarSessaoLocal();
+      setInterval(validarSessaoServidor, 15000);
+      aplicarTemaSalvo();
+      initReconhecimentoVoz();
+      initFormularios();
+      initScannerFoto();
+      initChatFlutuanteIA();
+    });
+
+    function alternarAuthTab(tab) {
+      if (tab === 'login') {
+        document.getElementById('tab-login').classList.add('ativa');
+        document.getElementById('tab-ativar').classList.remove('ativa');
+        document.getElementById('form-auth-login').style.display = 'flex';
+        document.getElementById('form-auth-ativar').style.display = 'none';
+      } else {
+        document.getElementById('tab-ativar').classList.add('ativa');
+        document.getElementById('tab-login').classList.remove('ativa');
+        document.getElementById('form-auth-login').style.display = 'none';
+        document.getElementById('form-auth-ativar').style.display = 'flex';
+      }
+    }
+
+    document.getElementById('form-auth-login').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const resp = await fetch(`${API_URL}/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: document.getElementById('login-email').value, senha: document.getElementById('login-senha').value })
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+          localStorage.setItem('usuario_logado', JSON.stringify(res.usuario));
+          localStorage.setItem('sessao_token', res.sessao_token);
+          location.reload();
+        } else { mostrarToast(res.detail || 'Erro ao entrar.', 'erro'); }
+      } catch (err) { mostrarToast('Erro de conexão.', 'erro'); }
+    };
+
+    document.getElementById('form-auth-ativar').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const resp = await fetch(`${API_URL}/ativar-licenca`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chave: document.getElementById('lic-chave').value,
+            nome: document.getElementById('lic-nome').value,
+            email: document.getElementById('lic-email').value,
+            senha: document.getElementById('lic-senha').value
+          })
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+          mostrarToast('Licença ativada com sucesso! Faça login.', 'sucesso');
+          alternarAuthTab('login');
+        } else { mostrarToast(res.detail || 'Erro ao ativar.', 'erro'); }
+      } catch (err) { mostrarToast('Erro de conexão.', 'erro'); }
+    };
+
+    function verificarSessaoLocal() {
+      const u = localStorage.getItem('usuario_logado');
+      const t = localStorage.getItem('sessao_token');
+      if (u && t) {
+        usuarioLogado = JSON.parse(u);
+        tokenSessao = t;
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('app-dashboard').style.display = 'flex';
+        document.getElementById('bolinha-ia-container').style.display = 'flex';
+        document.getElementById('nome-usuario-logado').textContent = usuarioLogado.nome;
+        carregarDadosGlobais();
+      } else {
+        document.getElementById('auth-screen').style.display = 'flex';
+      }
+    }
+
+    async function validarSessaoServidor() {
+      if (!usuarioLogado || !tokenSessao) return;
+      try {
+        const resp = await fetch(`${API_URL}/verificar-sessao?usuario_id=${usuarioLogado.id}&token=${tokenSessao}`, { method: 'POST' });
+        if (!resp.ok) { fazerLogout(); }
+      } catch (e) {}
+    }
+
+    function fazerLogout() {
+      localStorage.removeItem('usuario_logado');
+      localStorage.removeItem('sessao_token');
+      location.reload();
+    }
+
+    function aplicarTemaSalvo() {
+      const temaSalvo = localStorage.getItem('app_tema_preferido') || 'dark';
+      document.documentElement.setAttribute('data-theme', temaSalvo);
+      document.getElementById('btn-alternar-tema').onclick = () => {
+        const novo = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', novo);
+        localStorage.setItem('app_tema_preferido', novo);
+        renderizarGraficoGeral();
+      };
+    }
+
+    async function carregarDadosGlobais() {
+      if (!usuarioLogado) return;
+      const uid = usuarioLogado.id;
+      try {
+        const [respT, respO, respD] = await Promise.all([
+          fetch(`${API_URL}/transacoes?usuario_id=${uid}`),
+          fetch(`${API_URL}/orcamentos?usuario_id=${uid}`),
+          fetch(`${API_URL}/desejos?usuario_id=${uid}`)
+        ]);
+        transacoesGerais = await respT.json();
+        orcamentosLista = await respO.json();
+        desejosLista = await respD.json();
+
+        atualizarTotaisGerais();
+        renderizarTabelaExtrato();
+        renderizarOrcamentos();
+        renderizarDesejos();
+        renderizarGraficoGeral();
+        carregarProjecao();
+        carregarInsights();
+      } catch (err) { console.error(err); }
+    }
+
+    function formatarMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+    function formatarDataBR(d) { if (!d) return ''; const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; }
+
+    function atualizarTotaisGerais() {
+      const entradas = transacoesGerais.filter(t => t.tipo === 'entrada').reduce((a, b) => a + Number(b.valor), 0);
+      const saidas = transacoesGerais.filter(t => t.tipo === 'saida').reduce((a, b) => a + Number(b.valor), 0);
+      document.getElementById('valor-entradas').textContent = formatarMoeda(entradas);
+      document.getElementById('valor-saidas').textContent = formatarMoeda(saidas);
+      document.getElementById('valor-saldo').textContent = formatarMoeda(entradas - saidas);
+    }
+
+    async function carregarInsights() {
+      if (!usuarioLogado) return;
+      const alvo = document.getElementById('lista-insights');
+      if (!alvo) return;
+      try {
+        const resp = await fetch(`${API_URL}/insights?usuario_id=${usuarioLogado.id}`);
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.detail || 'Não foi possível analisar.');
+        const cores = { alerta: 'var(--danger)', atencao: '#f59e0b', positivo: 'var(--success)', info: 'var(--primary)' };
+        alvo.innerHTML = (dados.insights || []).map(i => `
+          <article style="background:var(--input-bg);border:1px solid var(--border-color);border-left:4px solid ${cores[i.tipo] || 'var(--primary)'};padding:12px;border-radius:10px">
+            <strong style="display:block;margin-bottom:6px">${escaparHTML(i.titulo)}</strong>
+            <p style="font-size:.82rem;color:var(--text-muted)">${escaparHTML(i.mensagem)}</p>
+          </article>`).join('') || '<p>Registre transações para receber recomendações.</p>';
+      } catch (e) {
+        alvo.innerHTML = '<p style="color:var(--text-muted)">Não foi possível atualizar as recomendações agora.</p>';
+      }
+    }
+
+    function escaparHTML(valor) {
+      return String(valor ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function carregarProjecao() {
+      const meses = document.getElementById('input-meses-projecao').value || 3;
+      try {
+        const resp = await fetch(`${API_URL}/projecao/${meses}?usuario_id=${usuarioLogado.id}`);
+        const p = await resp.json();
+        document.getElementById('resultado-projecao').innerHTML = `
+          Daqui a <strong>${p.periodo_meses} meses</strong>, considerando suas médias e contas pendentes, seu saldo projetado será de <strong style="color:${p.saldo_projetado_final>=0?'var(--success)':'var(--danger)'};">${formatarMoeda(p.saldo_projetado_final)}</strong>. 
+          (Entradas estimadas: ${formatarMoeda(p.entradas_estimadas)} | Saídas: ${formatarMoeda(p.saidas_estimadas)})
+        `;
+      } catch(e) {}
+    }
+
+    function renderizarTabelaExtrato() {
+      const corpo = document.getElementById('corpo-tabela-extrato');
+      if (!transacoesGerais.length) {
+        corpo.innerHTML = `<tr><td colspan="5" style="text-align:center;">Nenhum lançamento.</td></tr>`;
+        return;
+      }
+      corpo.innerHTML = transacoesGerais.map(t => `
+        <tr><td><strong>${escaparHTML(t.descricao)}</strong></td><td>${escaparHTML(t.categoria)}</td><td>${formatarDataBR(t.data)}</td><td style="color:${t.tipo==='entrada'?'var(--success)':'var(--danger)'};">${t.tipo==='entrada'?'+':'-'} ${formatarMoeda(Number(t.valor))}</td><td><button class="btn-excluir" onclick="deletarTransacao(${t.id})"><i class="fa-solid fa-trash"></i></button></td></tr>
+      `).join('');
+    }
+
+    async function deletarTransacao(id) {
+      await fetch(`${API_URL}/transacoes/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      carregarDadosGlobais();
+    }
+
+    function renderizarOrcamentos() {
+      const container = document.getElementById('container-orcamentos-cards');
+      if (!orcamentosLista.length) {
+        container.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem;">Nenhum teto definido.</div>`;
+        return;
+      }
+      container.innerHTML = orcamentosLista.map(o => `
+        <div style="background:var(--input-bg); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; font-size:0.8rem;">
+          <div><strong>${o.categoria}</strong>: Gasto ${formatarMoeda(o.gasto_atual)} / Limite ${formatarMoeda(o.limite_mensal)} ${o.estourado?'<span style="color:var(--danger); font-weight:700;">(Estourado)</span>':''}</div>
+          <button class="btn-excluir" onclick="deletarOrcamento(${o.id})"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      `).join('');
+    }
+
+    async function deletarOrcamento(id) {
+      await fetch(`${API_URL}/orcamentos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      carregarDadosGlobais();
+    }
+
+    function renderizarDesejos() {
+      const container = document.getElementById('container-desejos-cards');
+      if (!desejosLista.length) {
+        container.innerHTML = `<div style="grid-column: 1/-1; color:var(--text-muted); font-size:0.8rem;">Lista vazia.</div>`;
+        return;
+      }
+      container.innerHTML = desejosLista.map(d => {
+        const q = encodeURIComponent(d.titulo);
+        return `
+          <div class="card-desejo">
+            <div style="display:flex; justify-content:space-between;"><strong>${escaparHTML(d.titulo)}</strong><button class="btn-excluir" onclick="deletarDesejo(${d.id})"><i class="fa-solid fa-trash"></i></button></div>
+            <div style="font-weight:800; color:var(--ai-purple);">${formatarMoeda(d.valor)}</div>
+            <div class="lojas-comparacao-box">
+              <span style="font-size:0.6rem; font-weight:700; color:var(--text-muted);">Comparar:</span>
+              <div class="lojas-botoes-grid">
+                <a class="btn-loja ml" href="https://lista.mercadolivre.com.br/${q}" target="_blank">M. Livre</a>
+                <a class="btn-loja shopee" href="https://shopee.com.br/search?keyword=${q}" target="_blank">Shopee</a>
+              </div>
             </div>
+            <button class="btn-analisar" onclick="analisarDesejo(${d.id})">Analisar IA</button>
+            <div id="parecer-desejo-${d.id}" style="font-size:0.7rem; color:var(--text-muted);"></div>
+          </div>
+        `;
+      }).join('');
+    }
 
-            <!-- Área de Transações & IA JARVIS -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Registo de Transações -->
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col">
-                    <h3 class="text-lg font-bold mb-4">Adicionar Transação Manual</h3>
-                    <form onsubmit="adicionarTransacao(event)" class="space-y-4 flex-1 flex flex-col justify-between">
-                        <div class="space-y-3">
-                            <input type="text" id="t-desc" placeholder="Descrição (ex: Supermercado)" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white">
-                            <input type="number" step="0.01" id="t-valor" placeholder="Valor (R$)" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white">
-                            <div class="grid grid-cols-2 gap-3">
-                                <select id="t-tipo" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white">
-                                    <option value="saida">Saída / Despesa</option>
-                                    <option value="entrada">Entrada / Receita</option>
-                                </select>
-                                <input type="text" id="t-categoria" placeholder="Categoria" class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white" value="Outros">
-                            </div>
-                            <input type="date" id="t-data" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white">
-                        </div>
-                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition">Registar Transação</button>
-                    </form>
-                </div>
+    async function analisarDesejo(id) {
+      const resp = await fetch(`${API_URL}/desejos/${id}/analisar?usuario_id=${usuarioLogado.id}`, { method: 'POST' });
+      const res = await resp.json();
+      document.getElementById(`parecer-desejo-${id}`).textContent = res.parecer;
+    }
 
-                <!-- Assistente JARVIS & Scanner -->
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold mb-2">🤖 JARVIS (Assistente IA)</h3>
-                        <p class="text-slate-400 text-xs mb-4">Pode pedir múltiplos comandos numa linha só (ex: "Gastei 50 em mercado e 100 em luz") ou carregar faturas.</p>
-                        <div id="chat-respostas" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-36 overflow-y-auto text-sm text-slate-300 mb-4">
-                            Olá! Sou o JARVIS. Como posso ajudar nas suas finanças hoje?
-                        </div>
-                    </div>
-                    <form onsubmit="enviarChatAI(event)" class="flex gap-2">
-                        <input type="text" id="chat-input" placeholder="Digite o seu comando financeiro..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm">
-                        <button type="submit" class="bg-purple-600 hover:bg-purple-500 text-white px-5 rounded-xl font-semibold text-sm transition">Enviar</button>
-                    </form>
-                </div>
-            </div>
+    async function deletarDesejo(id) {
+      await fetch(`${API_URL}/desejos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      carregarDadosGlobais();
+    }
 
-            <!-- Tabela de Histórico -->
-            <div class="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                <h3 class="text-lg font-bold mb-4">Histórico de Transações</h3>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
-                                <th class="pb-3">Data</th>
-                                <th class="pb-3">Descrição</th>
-                                <th class="pb-3">Categoria</th>
-                                <th class="pb-3">Tipo</th>
-                                <th class="pb-3">Valor</th>
-                                <th class="pb-3 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabela-transacoes" class="divide-y divide-slate-800 text-sm">
-                            <!-- Preenchido via JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-    </div>
+    function renderizarGraficoGeral() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const corTexto = isDark ? '#f8fafc' : '#0f172a';
+      const cats = ['Alimentação', 'Moradia', 'Transporte', 'Lazer', 'Outros'];
+      const cGeral = document.getElementById('canvas-grafico-geral');
+      if (cGeral) {
+        if (chartGeralInstancia) chartGeralInstancia.destroy();
+        chartGeralInstancia = new Chart(cGeral, {
+          type: 'doughnut',
+          data: { labels: cats, datasets: [{ data: cats.map(c => transacoesGerais.filter(t => t.tipo === 'saida' && t.categoria === c).reduce((a,b)=>a+Number(b.valor),0)), backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#64748b'], borderWidth: 0 }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: corTexto, font: { size: 9 } } } } }
+        });
+      }
+    }
 
-    <script>
-        let usuarioId = localStorage.getItem("alvesmld_uid");
-        let tokenSessao = localStorage.getItem("alvesmld_token");
+    function initScannerFoto() {
+      document.getElementById('form-scanner-foto').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = document.getElementById('input-foto-fileiras').files[0];
+        if (!f) return;
+        const fd = new FormData();
+        fd.append('usuario_id', usuarioLogado.id);
+        fd.append('foto', f);
+        document.getElementById('scanner-loading').style.display = 'flex';
+        try {
+          const resp = await fetch(`${API_URL}/scanner-contas-foto`, { method: 'POST', body: fd });
+          const res = await resp.json();
+          document.getElementById('scanner-loading').style.display = 'none';
+          if (resp.ok) { mostrarToast(`Importado com sucesso (${res.mes_ano_detectado})`, 'sucesso'); e.target.reset(); carregarDadosGlobais(); }
+          else { mostrarToast(res.detail || 'Erro', 'erro'); }
+        } catch (e) { document.getElementById('scanner-loading').style.display = 'none'; mostrarToast('Erro', 'erro'); }
+      };
+    }
 
-        // Define a data atual nos inputs de data por defeito (Ano 2026)
-        document.getElementById('t-data').valueAsDate = new Date();
+    function initFormularios() {
+      document.getElementById('form-orcamento').onsubmit = async (e) => {
+        e.preventDefault();
+        await fetch(`${API_URL}/orcamentos`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario_id: usuarioLogado.id, categoria: document.getElementById('select-orcamento-cat').value, limite_mensal: parseFloat(document.getElementById('input-orcamento-limite').value) })
+        });
+        e.target.reset(); carregarDadosGlobais();
+      };
 
-        if (usuarioId && tokenSessao) {
-            verificarSessao();
+      document.getElementById('form-desejo').onsubmit = async (e) => {
+        e.preventDefault();
+        await fetch(`${API_URL}/desejos`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario_id: usuarioLogado.id, titulo: document.getElementById('input-desejo-titulo').value, valor: parseFloat(document.getElementById('input-desejo-valor').value), link: document.getElementById('input-desejo-link').value })
+        });
+        e.target.reset(); carregarDadosGlobais();
+      };
+    }
+
+    function alternarJanelaChat() {
+      const j = document.getElementById('janela-chat-ia');
+      j.style.display = j.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    function aoSelecionarFicheiroChat(input) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        ficheiroChatMime = file.type;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          ficheiroChatBase64 = e.target.result;
+          document.getElementById('nome-ficheiro-chat').innerHTML = `<i class="fa-solid fa-file"></i> ${file.name}`;
+          document.getElementById('preview-ficheiro-chat').style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function removerFicheiroChat() {
+      ficheiroChatBase64 = null;
+      ficheiroChatMime = null;
+      document.getElementById('input-chat-file').value = '';
+      document.getElementById('preview-ficheiro-chat').style.display = 'none';
+    }
+
+    function initReconhecimentoVoz() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        reconhecimentoVoz = new SpeechRecognition();
+        reconhecimentoVoz.lang = 'pt-BR';
+        reconhecimentoVoz.onresult = (event) => {
+          document.getElementById('input-chat-flutuante').value = event.results[0][0].transcript;
+          pararGravacaoVoz();
+          document.getElementById('btn-enviar-chat-flutuante').click();
+        };
+        reconhecimentoVoz.onerror = () => pararGravacaoVoz();
+        reconhecimentoVoz.onend = () => pararGravacaoVoz();
+      }
+    }
+
+    function alternarGravacaoVoz() {
+      if (!reconhecimentoVoz) return;
+      const btnVoz = document.getElementById('btn-ouvir-voz');
+      if (estaGravandoVoz) { reconhecimentoVoz.stop(); } else { reconhecimentoVoz.start(); estaGravandoVoz = true; btnVoz.classList.add('ouvindo'); }
+    }
+
+    function pararGravacaoVoz() {
+      estaGravandoVoz = false;
+      const btnVoz = document.getElementById('btn-ouvir-voz');
+      if (btnVoz) btnVoz.classList.remove('ouvindo');
+    }
+
+    function initChatFlutuanteIA() {
+      const btnEnviar = document.getElementById('btn-enviar-chat-flutuante');
+      const inputChat = document.getElementById('input-chat-flutuante');
+      const corpoChat = document.getElementById('chat-mensagens-corpo');
+
+      const enviarMsg = async () => {
+        const texto = inputChat.value.trim();
+        if (!texto && !ficheiroChatBase64) return;
+
+        corpoChat.innerHTML += `<div class="msg-chat usuario">${ficheiroChatBase64 ? '[Ficheiro] ' : ''}${escaparHTML(texto)}</div>`;
+        const fileB64 = ficheiroChatBase64;
+        const mimeB64 = ficheiroChatMime;
+        inputChat.value = '';
+        removerFicheiroChat();
+        corpoChat.scrollTop = corpoChat.scrollHeight;
+
+        try {
+          const resp = await fetch(`${API_URL}/chat-ai`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario_id: usuarioLogado.id, pergunta: texto || "Analise.", ficheiro_base64: fileB64, mime_type: mimeB64 })
+          });
+          const res = await resp.json();
+          corpoChat.innerHTML += `<div class="msg-chat ia">${escaparHTML(res.resposta)}</div>`;
+          corpoChat.scrollTop = corpoChat.scrollHeight;
+          if (res.acao_executada) carregarDadosGlobais();
+        } catch (e) {
+          corpoChat.innerHTML += `<div class="msg-chat ia">Erro de comunicação.</div>`;
         }
+      };
 
-        function alternarAbaAuth(tipo) {
-            if (tipo === 'entrar') {
-                document.getElementById('form-login').classList.remove('hidden');
-                document.getElementById('form-ativar').classList.add('hidden');
-                document.getElementById('tab-entrar').className = "flex-1 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white transition";
-                document.getElementById('tab-ativar').className = "flex-1 py-2.5 text-sm font-semibold rounded-lg text-slate-400 hover:text-white transition";
-            } else {
-                document.getElementById('form-login').classList.add('hidden');
-                document.getElementById('form-ativar').classList.remove('hidden');
-                document.getElementById('tab-ativar').className = "flex-1 py-2.5 text-sm font-semibold rounded-lg bg-emerald-600 text-white transition";
-                document.getElementById('tab-entrar').className = "flex-1 py-2.5 text-sm font-semibold rounded-lg text-slate-400 hover:text-white transition";
-            }
-        }
-
-        async function fazerLogin(e) {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const senha = document.getElementById('login-senha').value;
-            const msg = document.getElementById('auth-mensagem');
-
-            try {
-                const res = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({email, senha})
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    localStorage.setItem("alvesmld_uid", data.usuario.id);
-                    localStorage.setItem("alvesmld_token", data.sessao_token);
-                    location.reload();
-                } else {
-                    msg.innerHTML = `<span class="text-rose-400">${data.detail}</span>`;
-                }
-            } catch (err) {
-                msg.innerHTML = `<span class="text-rose-400">Erro de conexão com o servidor.</span>`;
-            }
-        }
-
-        async function ativarPrimeiroAcesso(e) {
-            e.preventDefault();
-            const email = document.getElementById('ativar-email').value;
-            const nova_senha = document.getElementById('ativar-senha').value;
-            const msg = document.getElementById('auth-mensagem');
-
-            try {
-                const res = await fetch('/api/primeiro-acceso', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({email, nova_senha})
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    msg.innerHTML = `<span class="text-emerald-400">${data.mensagem} Faça login agora na aba Entrar.</span>`;
-                    setTimeout(() => alternarAbaAuth('entrar'), 2000);
-                } else {
-                    msg.innerHTML = `<span class="text-rose-400">${data.detail}</span>`;
-                }
-            } catch (err) {
-                msg.innerHTML = `<span class="text-rose-400">Erro ao ativar conta.</span>`;
-            }
-        }
-
-        async function verificarSessao() {
-            try {
-                const res = await fetch(`/api/verificar-sessao?usuario_id=${usuarioId}&token=${tokenSessao}`, {method: 'POST'});
-                if (res.ok) {
-                    document.getElementById('auth-modal').classList.add('hidden');
-                    document.getElementById('app-conteudo').classList.remove('hidden');
-                    carregarTransacoes();
-                } else {
-                    sair();
-                }
-            } catch (e) {
-                sair();
-            }
-        }
-
-        function sair() {
-            localStorage.removeItem("alvesmld_uid");
-            localStorage.removeItem("alvesmld_token");
-            location.reload();
-        }
-
-        async function carregarTransacoes() {
-            const res = await fetch(`/api/transacoes?usuario_id=${usuarioId}`);
-            const transacoes = await res.json();
-            const tbody = document.getElementById('tabela-transacoes');
-            tbody.innerHTML = '';
-
-            let entradas = 0;
-            let saidas = 0;
-
-            transacoes.forEach(t => {
-                if (t.tipo === 'entrada') entradas += t.valor;
-                else saidas += t.valor;
-
-                tbody.innerHTML += `
-                    <tr class="hover:bg-slate-800/50">
-                        <td class="py-3 text-slate-300">${t.data}</td>
-                        <td class="py-3 font-medium text-white">${t.descricao}</td>
-                        <td class="py-3 text-slate-400">${t.categoria}</td>
-                        <td class="py-3"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${t.tipo === 'entrada' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">${t.tipo}</span></td>
-                        <td class="py-3 font-bold ${t.tipo === 'entrada' ? 'text-emerald-400' : 'text-slate-100'}">R$ ${t.valor.toFixed(2)}</td>
-                        <td class="py-3 text-right"><button onclick="deletarTransacao(${t.id})" class="text-rose-400 hover:text-rose-300 text-xs font-semibold">Excluir</button></td>
-                    </tr>
-                `;
-            });
-
-            document.getElementById('resumo-entradas').innerText = `R$ ${entradas.toFixed(2)}`;
-            document.getElementById('resumo-saidas').innerText = `R$ ${saidas.toFixed(2)}`;
-            document.getElementById('resumo-saldo').innerText = `R$ ${(entradas - saidas).toFixed(2)}`;
-        }
-
-        async function adicionarTransacao(e) {
-            e.preventDefault();
-            const payload = {
-                usuario_id: parseInt(usuarioId),
-                descricao: document.getElementById('t-desc').value,
-                valor: parseFloat(document.getElementById('t-valor').value),
-                tipo: document.getElementById('t-tipo').value,
-                categoria: document.getElementById('t-categoria').value,
-                data: document.getElementById('t-data').value
-            };
-
-            const res = await fetch('/api/transacoes', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                document.getElementById('t-desc').value = '';
-                document.getElementById('t-valor').value = '';
-                carregarTransacoes();
-            }
-        }
-
-        async function deletarTransacao(id) {
-            await fetch(`/api/transacoes/${id}?usuario_id=${usuarioId}`, {method: 'DELETE'});
-            carregarTransacoes();
-        }
-
-        async function enviarChatAI(e) {
-            e.preventDefault();
-            const input = document.getElementById('chat-input');
-            const pergunta = input.value;
-            if (!pergunta) return;
-
-            const chatBox = document.getElementById('chat-respostas');
-            chatBox.innerHTML += `<div class="mt-2 text-indigo-300"><b>Você:</b> ${pergunta}</div>`;
-            input.value = '';
-
-            try {
-                const res = await fetch('/api/chat-ai', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({usuario_id: parseInt(usuarioId), pergunta})
-                });
-                const data = await res.json();
-                chatBox.innerHTML += `<div class="mt-1 text-slate-300"><b>JARVIS:</b> ${data.resposta} (${data.status} - ${data.progresso}%)</div>`;
-                chatBox.scrollTop = chatBox.scrollHeight;
-                carregarTransacoes();
-            } catch (err) {
-                chatBox.innerHTML += `<div class="mt-1 text-rose-400"><b>JARVIS:</b> Erro de comunicação.</div>`;
-            }
-        }
-    </script>
+      btnEnviar.onclick = enviarMsg;
+      inputChat.onkeypress = (e) => { if (e.key === 'Enter') enviarMsg(); };
+    }
+  </script>
 </body>
 </html>

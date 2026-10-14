@@ -1,15 +1,16 @@
 import os
 import json
 import io
+import csv
 import sqlite3
 import hashlib
 import secrets
 from pathlib import Path
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
 
@@ -17,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-SENHA_FAMILIAR_MESTRA = os.getenv("SENHA_FAMILIAR_MESTRA", "chave_mestra_padrao_segura")
+SENHA_FAMILIAR_MESTRA = os.getenv("SENHA_FAMILIAR_MESTRA", "").strip()
 
 try:
     from google import genai
@@ -28,20 +29,20 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend corrigido com ano atual 2026 e tratamento de cota de IA",
-    version="41.0.0"
+    description="Backend completo com todas as funcionalidades, IA, Licenciamento Cakto e Anti-Sharing",
+    version="33.0.0"
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DB_PATH = "financas.db"
 BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "financas.db"))
 
 @app.get("/", include_in_schema=False)
 def servir_frontend():
@@ -59,8 +60,18 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nome TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                senha_hash TEXT,
+                senha_hash TEXT NOT NULL,
                 sessao_token TEXT
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS licencas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chave TEXT UNIQUE NOT NULL,
+                email TEXT,
+                status TEXT DEFAULT 'disponivel',
+                criado_em TEXT NOT NULL
             )
         """)
         
@@ -123,6 +134,27 @@ def init_db():
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
             )
         """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS compras_cakto (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT UNIQUE,
+                email TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'approved',
+                criado_em TEXT NOT NULL,
+                ativada INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        # Migração segura para instalações existentes
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_compras_email ON compras_cakto(email)")
+
+        cursor.execute("SELECT COUNT(*) FROM usuarios WHERE email = 'demo@financas.com'")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""
+                INSERT INTO usuarios (nome, email, senha_hash)
+                VALUES ('Usuário Convidado', 'demo@financas.com', ?)
+            """, (hashlib.sha256('123456'.encode()).hexdigest(),))
+            
         conn.commit()
 
 init_db()
@@ -134,9 +166,11 @@ class UsuarioLogin(BaseModel):
     email: str
     senha: str
 
-class PrimeiroAcessoSchema(BaseModel):
+class AtivarLicencaSchema(BaseModel):
+    chave: Optional[str] = ""
+    nome: str
     email: str
-    nova_senha: str
+    senha: str
 
 class TransacaoSchema(BaseModel):
     id: Optional[int] = None
@@ -175,12 +209,12 @@ def login_usuario(credenciais: UsuarioLogin):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        if credenciais.senha == SENHA_FAMILIAR_MESTRA:
+        if SENHA_FAMILIAR_MESTRA and secrets.compare_digest(credenciais.senha, SENHA_FAMILIAR_MESTRA):
             u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
             if not u:
                 cursor.execute("""
                     INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)
-                """, ("Administrador / Mestre", email_limpo, hash_senha(credenciais.senha)))
+                """, ("Familiar (Pais)", email_limpo, hash_senha(credenciais.senha)))
                 conn.commit()
                 u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
         else:
@@ -188,7 +222,7 @@ def login_usuario(credenciais: UsuarioLogin):
                                (email_limpo, hash_senha(credenciais.senha))).fetchone()
         
         if not u:
-            raise HTTPException(status_code=401, detail="Acesso negado. E-mail não encontrado, senha incorreta ou pagamento não aprovado.")
+            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos ou acesso não autorizado.")
         
         novo_token = secrets.token_hex(32)
         cursor.execute("UPDATE usuarios SET sessao_token = ? WHERE id = ?", (novo_token, u["id"]))
@@ -200,28 +234,6 @@ def login_usuario(credenciais: UsuarioLogin):
             "sessao_token": novo_token
         }
 
-@app.post("/api/primeiro-acceso")
-def primeiro_acesso(dados: PrimeiroAcessoSchema):
-    email_limpo = dados.email.lower().strip()
-    
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
-        
-        if not u:
-            raise HTTPException(status_code=404, detail="E-mail não encontrado como comprador na Cakto. Certifique-se de usar o mesmo e-mail da compra.")
-        
-        if u["senha_hash"] and u["senha_hash"] != "" and u["senha_hash"] != hash_senha(SENHA_FAMILIAR_MESTRA):
-            raise HTTPException(status_code=400, detail="Esta conta já possui uma senha definida. Utilize a tela de login.")
-        
-        senha_h = hash_senha(dados.nova_senha)
-        cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?", (senha_h, u["id"]))
-        conn.commit()
-        
-        return {"sucesso": True, "mensagem": "Senha definida com sucesso! Já pode fazer login."}
-
 @app.post("/api/verificar-sessao")
 def verificar_sessao(usuario_id: int = Query(...), token: str = Query(...)):
     with sqlite3.connect(DB_PATH) as conn:
@@ -229,44 +241,130 @@ def verificar_sessao(usuario_id: int = Query(...), token: str = Query(...)):
         cursor = conn.cursor()
         u = cursor.execute("SELECT sessao_token FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
         if not u or u["sessao_token"] != token:
-            raise HTTPException(status_code=401, detail="Sessão encerrada.")
+            raise HTTPException(status_code=401, detail="Sessão encerrada por outro acesso simultâneo.")
         return {"valido": True}
+
+@app.post("/api/ativar-licenca")
+def ativar_licenca(payload: AtivarLicencaSchema):
+    email_limpo = payload.email.lower().strip()
+    if len(payload.senha) < 8:
+        raise HTTPException(status_code=400, detail="Crie uma senha com pelo menos 8 caracteres.")
+    if not email_limpo or "@" not in email_limpo:
+        raise HTTPException(status_code=400, detail="Informe um e-mail válido.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
+        if existente:
+            raise HTTPException(status_code=400, detail="Este e-mail já possui uma conta. Entre com sua senha.")
+
+        chave = (payload.chave or "").strip()
+        lic = None
+        compra = None
+        if chave:
+            lic = cursor.execute(
+                "SELECT * FROM licencas WHERE chave = ? AND status = 'disponivel'",
+                (chave,)
+            ).fetchone()
+            if not lic:
+                raise HTTPException(status_code=400, detail="Chave inválida ou já utilizada.")
+            if lic["email"] and lic["email"].lower() != email_limpo:
+                raise HTTPException(status_code=403, detail="Esta licença pertence a outro e-mail.")
+        else:
+            compra = cursor.execute("""
+                SELECT id FROM compras_cakto
+                WHERE lower(email) = ? AND status = 'approved' AND ativada = 0
+                ORDER BY id DESC LIMIT 1
+            """, (email_limpo,)).fetchone()
+            if not compra:
+                raise HTTPException(status_code=403, detail="Não encontramos uma compra aprovada para este e-mail. Use o mesmo e-mail da compra na Cakto ou informe sua chave de licença.")
+
+        cursor.execute(
+            "INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)",
+            (payload.nome.strip(), email_limpo, hash_senha(payload.senha))
+        )
+        uid = cursor.lastrowid
+        if lic:
+            cursor.execute("UPDATE licencas SET status = 'utilizada', email = ? WHERE id = ?", (email_limpo, lic["id"]))
+        if compra:
+            cursor.execute("UPDATE compras_cakto SET ativada = 1 WHERE id = ?", (compra["id"],))
+        conn.commit()
+        return {"sucesso": True, "usuario": {"id": uid, "nome": payload.nome.strip(), "email": email_limpo}}
 
 @app.post("/api/webhook/cakto")
 async def webhook_cakto(request: Request):
+    """
+    Registra compras aprovadas por e-mail para liberar o cadastro automaticamente.
+    Configure CAKTO_WEBHOOK_SECRET no Render e envie o mesmo valor no header
+    X-Webhook-Secret. O formato do payload pode variar; extraímos campos comuns.
+    """
+    secret_configurado = os.getenv("CAKTO_WEBHOOK_SECRET", "").strip()
+    if secret_configurado:
+        recebido = request.headers.get("x-webhook-secret", "") or request.query_params.get("secret", "")
+        if not secrets.compare_digest(recebido, secret_configurado):
+            raise HTTPException(status_code=401, detail="Webhook não autorizado.")
+
     try:
         dados = await request.json()
-        
-        status_pagamento = (
-            dados.get("status") or 
-            dados.get("event") or 
-            dados.get("data", {}).get("status") or 
-            ""
-        ).lower()
-        
-        cliente_dados = dados.get("data", {}).get("customer", {}) or dados.get("customer", {})
-        email_cliente = (cliente_dados.get("email") or dados.get("email") or "").lower().strip()
-        nome_cliente = cliente_dados.get("name") or dados.get("name") or "Cliente Pro"
-        
-        if any(keyword in status_pagamento for keyword in ["approved", "paid", "order.paid", "test", "sucesso"]) and email_cliente:
-            with sqlite3.connect(DB_PATH) as conn:
-                cursor = conn.cursor()
-                existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_cliente,)).fetchone()
-                
-                if not existente:
-                    cursor.execute("""
-                        INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, '')
-                    """, (nome_cliente, email_cliente))
-                    conn.commit()
-                    acao = "comprador_registrado_para_primeiro_acesso"
-                else:
-                    acao = "cliente_ja_registrado"
-                    
-            return {"status": "sucesso", "acao": acao, "email": email_cliente}
-            
-        return {"status": "ignorado", "recebido": status_pagamento}
-    except Exception as e:
-        return {"erro": str(e)}
+        # Alguns eventos colocam os dados do pedido dentro de data/order/customer.
+        def nested(obj, *keys):
+            atual = obj
+            for key in keys:
+                if not isinstance(atual, dict):
+                    return None
+                atual = atual.get(key)
+            return atual
+
+        status_raw = (
+            dados.get("status") or dados.get("payment_status") or dados.get("event")
+            or nested(dados, "data", "status") or nested(dados, "data", "event")
+            or nested(dados, "order", "status")
+        )
+        status = str(status_raw or "").lower().strip()
+        email = (
+            dados.get("email") or dados.get("customer_email")
+            or nested(dados, "customer", "email")
+            or nested(dados, "buyer", "email")
+            or nested(dados, "data", "customer", "email")
+            or nested(dados, "data", "buyer", "email")
+            or nested(dados, "order", "customer", "email")
+        )
+        order_id = (
+            dados.get("id") or dados.get("order_id") or dados.get("transaction_id")
+            or nested(dados, "data", "id") or nested(dados, "order", "id")
+        )
+        approved = status in {"approved", "paid", "order.paid", "payment.approved", "purchase_approved", "completed"}
+        if not approved:
+            return {"status": "ignorado", "motivo": "evento não representa pagamento aprovado"}
+        if not email or "@" not in str(email):
+            raise HTTPException(status_code=400, detail="Pagamento aprovado, mas o e-mail do comprador não foi encontrado no payload da Cakto.")
+
+        email = str(email).strip().lower()
+        order_id = str(order_id).strip() if order_id is not None else None
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            if order_id:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO compras_cakto (order_id, email, status, criado_em)
+                    VALUES (?, ?, 'approved', ?)
+                """, (order_id, email, str(date.today())))
+                # Se já existe o pedido, atualiza o e-mail/status sem duplicar compra.
+                cursor.execute("UPDATE compras_cakto SET email = ?, status = 'approved' WHERE order_id = ?", (email, order_id))
+            else:
+                # Sem ID do pedido não há idempotência perfeita; gera uma chave de deduplicação pelo payload.
+                fingerprint = hashlib.sha256(json.dumps(dados, sort_keys=True, default=str).encode()).hexdigest()
+                cursor.execute("""
+                    INSERT OR IGNORE INTO compras_cakto (order_id, email, status, criado_em)
+                    VALUES (?, ?, 'approved', ?)
+                """, (fingerprint, email, str(date.today())))
+            conn.commit()
+        return {"status": "compra_registrada", "email": email, "proximo_passo": "O comprador pode criar a conta usando este mesmo e-mail."}
+    except HTTPException:
+        raise
+    except Exception:
+        # Não expor detalhes internos do servidor no endpoint público.
+        raise HTTPException(status_code=400, detail="Payload de webhook inválido.")
 
 @app.post("/api/scanner-contas-foto")
 async def scanner_contas_foto(
@@ -286,13 +384,12 @@ async def scanner_contas_foto(
         else:
             part_file = Image.open(io.BytesIO(conteudo_ficheiro))
 
-        prompt_vision = f"""
-        Analise este documento ou imagem. O ano atual obrigatório é 2026. Nunca utilize anos antigos como 2023.
-        Retorne APENAS um JSON estrito:
-        {{
+        prompt_vision = """
+        Analise este documento ou imagem. Retorne APENAS um JSON estrito:
+        {
           "mes_ano_detectado": "Outubro/2026",
-          "contas": [{{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "2026-10-20"}}]
-        }}
+          "contas": [{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
+        }
         """
         response = client.models.generate_content(model='gemini-2.5-flash', contents=[part_file, prompt_vision])
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
@@ -437,11 +534,54 @@ def deletar_desejo(desejo_id: int, usuario_id: int = Query(...)):
         conn.commit()
         return {"sucesso": True}
 
+@app.get("/api/insights")
+def gerar_insights(usuario_id: int = Query(...)):
+    """Sugestões financeiras objetivas com base nas transações reais do usuário."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT descricao, valor, tipo, categoria, data FROM transacoes WHERE usuario_id = ?",
+            (usuario_id,)
+        ).fetchall()
+    transacoes = [dict(r) for r in rows]
+    saidas = [t for t in transacoes if t["tipo"] == "saida"]
+    entradas = sum(float(t["valor"] or 0) for t in transacoes if t["tipo"] == "entrada")
+    total_saidas = sum(float(t["valor"] or 0) for t in saidas)
+    saldo = entradas - total_saidas
+    por_cat = {}
+    for t in saidas:
+        cat = t["categoria"] or "Outros"
+        por_cat[cat] = por_cat.get(cat, 0) + float(t["valor"] or 0)
+    insights = []
+    if not transacoes:
+        insights.append({"tipo":"info","titulo":"Comece registrando suas finanças","mensagem":"Adicione suas entradas e despesas para receber recomendações personalizadas. Você também pode dizer à IA: “gastei R$ 45 no mercado”."})
+    else:
+        if entradas > 0:
+            taxa = total_saidas / entradas * 100
+            if taxa >= 90:
+                insights.append({"tipo":"alerta","titulo":"Quase toda a renda já está comprometida","mensagem":f"Suas saídas registradas equivalem a {taxa:.0f}% das entradas. Revise gastos variáveis e priorize as contas essenciais."})
+            elif taxa >= 70:
+                insights.append({"tipo":"atencao","titulo":"Atenção à proporção dos gastos","mensagem":f"Você já usou {taxa:.0f}% das entradas registradas em despesas. Tente reservar uma parte para imprevistos."})
+            else:
+                insights.append({"tipo":"positivo","titulo":"Acompanhe seu ritmo de gastos","mensagem":f"As saídas representam {taxa:.0f}% das entradas registradas. Continue conferindo os lançamentos para manter esse controle."})
+        if por_cat:
+            cat, valor = max(por_cat.items(), key=lambda item:item[1])
+            percentual = (valor / total_saidas * 100) if total_saidas else 0
+            insights.append({"tipo":"atencao","titulo":f"Categoria com maior gasto: {cat}","mensagem":f"Você registrou {valor:.2f} nessa categoria ({percentual:.0f}% das saídas). Veja se há despesas recorrentes que podem ser reduzidas."})
+        if saldo < 0:
+            insights.append({"tipo":"alerta","titulo":"Seu saldo registrado está negativo","mensagem":f"A diferença entre entradas e saídas é de R$ {saldo:.2f}. Evite novas despesas não essenciais até revisar o orçamento."})
+        if len(saidas) >= 3:
+            recentes = sorted(saidas, key=lambda t: t["data"] or "", reverse=True)[:10]
+            media = sum(float(t["valor"] or 0) for t in recentes) / len(recentes)
+            insights.append({"tipo":"info","titulo":"Confira pequenas despesas frequentes","mensagem":f"A média das últimas {len(recentes)} despesas registradas é R$ {media:.2f}. Pequenos gastos repetidos podem acumular; confira descrições e datas."})
+    return {"saldo": round(saldo,2), "entradas": round(entradas,2), "saidas": round(total_saidas,2), "insights": insights[:5]}
+
+
 @app.post("/api/chat-ai")
 def chat_mentor(payload: ChatPrompt):
     uid = payload.usuario_id
     if not HAS_GEMINI_SDK:
-        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False, "progresso": 100}
+        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False}
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -453,7 +593,13 @@ def chat_mentor(payload: ChatPrompt):
             saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
             saldo = entradas - saidas
 
-        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Data corrente obrigatória: 2026. Pedido em lote/linha: {payload.pergunta}"]
+        resumo_categorias = {}
+        for t in transacoes:
+            if t["tipo"] == "saida":
+                cat = t["categoria"] or "Outros"
+                resumo_categorias[cat] = resumo_categorias.get(cat, 0) + float(t["valor"] or 0)
+        resumo_txt = ", ".join(f"{k}: R$ {v:.2f}" for k, v in sorted(resumo_categorias.items(), key=lambda x:x[1], reverse=True))
+        conteudo_prompt = [f"Saldo registrado: R$ {saldo:.2f}. Entradas totais registradas: R$ {entradas:.2f}. Saídas totais registradas: R$ {saidas:.2f}. Gastos por categoria: {resumo_txt or 'sem dados'}. Pedido do usuário: {payload.pergunta}"]
         
         if payload.ficheiro_base64:
             header, encoded = payload.ficheiro_base64.split(",", 1)
@@ -466,17 +612,19 @@ def chat_mentor(payload: ChatPrompt):
                 conteudo_prompt.insert(0, Image.open(io.BytesIO(file_bytes)))
 
         prompt_sistema = """
-        Você é o JARVIS, assistente financeiro inteligente, ágil e capaz de processar múltiplos comandos e listas em uma única linha de texto.
-        REGRA CRUCIAL DE DATA: O ano atual obrigatório para todas as transações, vencimentos ou datas geradas é 2026. NUNCA utilize 2023 ou outros anos passados.
-        Retorne APENAS um JSON estrito contendo uma lista de ações caso existam múltiplos pedidos, ou uma ação principal:
+        Você é o JARVIS, consultor de finanças pessoais em português do Brasil.
+        Use os dados financeiros do usuário para dar recomendações concretas e gentis:
+        identifique categorias caras, gastos recorrentes descritos, risco de saldo negativo,
+        oportunidade de economizar e próximos passos. Nunca invente transações nem diga que
+        uma conta bancária está conectada se isso não foi informado. Ao detectar uma frase
+        clara como “gastei 45 reais no mercado” ou “recebi 2000 de salário”, registre uma
+        transação. Se faltar valor/tipo/data, faça uma pergunta e não registre.
+        Retorne APENAS um JSON estrito:
         {
           "resposta_texto": "...",
-          "progresso_percentual": 100,
-          "status_processamento": "Concluído com sucesso",
-          "acoes": [
-            {"acao": "adicionar_transacao", "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "2026-10-14"}},
-            {"acao": "definir_orcamento", "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}}
-          ]
+          "acao": "adicionar_transacao" | "definir_orcamento" | "nenhuma",
+          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"},
+          "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}
         }
         """
         conteudo_prompt.insert(0, prompt_sistema)
@@ -485,54 +633,41 @@ def chat_mentor(payload: ChatPrompt):
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
         resultado = json.loads(texto_limpo)
 
-        acoes = resultado.get("acoes", [])
-        resposta_final = resultado.get("resposta_texto", "Processado com sucesso.")
-        progresso = resultado.get("progresso_percentual", 100)
-        status_proc = resultado.get("status_processamento", "Concluído")
-
         acao_executada = False
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            for item in acoes:
-                tipo_acao = item.get("acao")
-                if tipo_acao == "adicionar_transacao":
-                    d = item.get("dados_transacao", {})
-                    cursor.execute("""
-                        INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (uid, d.get("descricao", "Item"), float(d.get("valor", 0.0)), d.get("tipo", "saida"), d.get("categoria", "Outros"), d.get("data", str(date.today()))))
-                    acao_executada = True
-                elif tipo_acao == "definir_orcamento":
-                    o = item.get("dados_orcamento", {})
-                    cat = o.get("categoria", "Outros")
-                    lim = float(o.get("limite_mensal", 0.0))
-                    existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (uid, cat)).fetchone()
-                    if existente:
-                        cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (lim, existente[0]))
-                    else:
-                        cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (uid, cat, lim))
-                    acao_executada = True
-            conn.commit()
+        resposta_final = resultado.get("resposta_texto", "Processado.")
+        acao = resultado.get("acao")
 
-        return {
-            "resposta": resposta_final, 
-            "acao_executada": acacao_executada if 'acao_executada' in locals() else True,
-            "progresso": progresso,
-            "status": status_proc
-        }
-    except Exception as e:
-        erro_msg = str(e)
-        if "429" in erro_msg or "RESOURCE_EXHAUSTED" in erro_msg:
-            msg_amigavel = "Limite de requisições da IA atingido temporariamente (Cota excedida na API do Gemini). Tente novamente mais tarde."
-        else:
-            msg_amigavel = f"Erro ao processar o pedido: {erro_msg}"
-            
-        return {
-            "resposta": msg_amigavel, 
-            "acao_executada": False,
-            "progresso": 0,
-            "status": "Erro de cota ou comunicação"
-        }
+        if acao == "adicionar_transacao":
+            d = resultado.get("dados_transacao", {})
+            valor_transacao = float(d.get("valor", 0.0))
+            tipo_transacao = d.get("tipo", "saida")
+            if valor_transacao <= 0 or tipo_transacao not in ("entrada", "saida"):
+                return {"resposta": resposta_final or "Não consegui confirmar valor e tipo. Pode informar novamente?", "acao_executada": False}
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (uid, str(d.get("descricao", "Item"))[:180], valor_transacao, tipo_transacao, str(d.get("categoria", "Outros"))[:80], d.get("data", str(date.today()))))
+                conn.commit()
+            acao_executada = True
+        elif acao == "definir_orcamento":
+            o = resultado.get("dados_orcamento", {})
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cat = o.get("categoria", "Outros")
+                lim = float(o.get("limite_mensal", 0.0))
+                existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (uid, cat)).fetchone()
+                if existente:
+                    cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (lim, existente[0]))
+                else:
+                    cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (uid, cat, lim))
+                conn.commit()
+            acao_executada = True
+
+        return {"resposta": resposta_final, "acao_executada": acao_executada}
+    except Exception:
+        return {"resposta": "Não consegui processar agora. Confira se GEMINI_API_KEY está configurada no Render e tente novamente.", "acao_executada": False}
 
 if __name__ == "__main__":
     import uvicorn
