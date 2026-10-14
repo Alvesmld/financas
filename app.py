@@ -5,12 +5,12 @@ import csv
 import sqlite3
 import hashlib
 import urllib.parse
-from fastapi.responses import FileResponse, StreamingResponse
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
 
@@ -27,11 +27,10 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI Engine Auth Fix",
-    description="Backend com CORS totalmente liberado e login simplificado",
-    version="16.0.0"
+    description="Backend com CORS liberado e rota raiz servindo o frontend",
+    version="17.0.0"
 )
 
-# Liberação completa de CORS para acesso local e web
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,6 +40,17 @@ app.add_middleware(
 )
 
 DB_PATH = "financas.db"
+BASE_DIR = Path(__file__).resolve().parent
+
+# --- ROTA RAIZ PARA SERVIR O FRONTEND ---
+
+@app.get("/", include_in_schema=False)
+def servir_frontend():
+    index_file = BASE_DIR / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
+    return {"detail": "Ficheiro index.html não encontrado no servidor."}
+
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS SQLITE ---
 
@@ -107,12 +117,11 @@ def init_db():
             )
         """)
         
-        # Criar usuário padrão (Demo) se a tabela estiver vazia
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         if cursor.fetchone()[0] == 0:
             cursor.execute("""
                 INSERT INTO usuarios (nome, email, senha_hash)
-                VALUES ('Usuário Demo', 'demo@financas.com', ?)
+                VALUES ('Usuário Convidado', 'demo@financas.com', ?)
             """, (hashlib.sha256('123456'.encode()).hexdigest(),))
             
         conn.commit()
@@ -344,7 +353,7 @@ def processar_comando_agente_ia(mensagem_usuario: str, usuario_id: int) -> Dict[
         except Exception as e:
             print(f"Erro Gemini: {e}")
 
-    return {"resposta": "Posso gerenciar seus gastos, lista de desejos e relatórios. Exemplo: 'Monte uma planilha do dia 15 para frente'.", "acao_executada": False}
+    return {"resposta": "Posso gerenciar seus gastos, lista de desejos e relatórios.", "acao_executada": False}
 
 
 # --- ANÁLISE DE DESEJOS ---
@@ -372,7 +381,7 @@ def analisar_viabilidade_desejo(desejo_id: int, usuario_id: int) -> Dict[str, An
         links_lojas = gerar_links_lojas(desejo["titulo"])
 
         status_v = "viavel" if saldo_pos_contas > 200 else ("ressalva" if saldo_restante > 0 else "risco")
-        parecer = f"Comprando '{desejo['titulo']}' (R$ {valor_desejo:.2f}), seu saldo ficará em R$ {saldo_restante:.2f}. Recomendamos comparar no Mercado Livre, Shopee, Amazon e Magalu."
+        parecer = f"Comprando '{desejo['titulo']}' (R$ {valor_desejo:.2f}), seu saldo ficará em R$ {saldo_restante:.2f}."
         
         return {
             "desejo": dict(desejo),
