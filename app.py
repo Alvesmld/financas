@@ -1,16 +1,15 @@
 import os
 import json
 import io
-import csv
 import sqlite3
 import hashlib
 import secrets
 from pathlib import Path
 from datetime import date, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from PIL import Image
 
@@ -29,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend completo seguro com Licenciamento Cakto e Anti-Sharing",
-    version="34.0.0"
+    description="Backend seguro com Webhook Cakto e Senhas Únicas Automáticas",
+    version="36.0.0"
 )
 
 app.add_middleware(
@@ -62,16 +61,6 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 senha_hash TEXT NOT NULL,
                 sessao_token TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS licencas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chave TEXT UNIQUE NOT NULL,
-                email TEXT,
-                status TEXT DEFAULT 'disponivel',
-                criado_em TEXT NOT NULL
             )
         """)
         
@@ -145,12 +134,6 @@ class UsuarioLogin(BaseModel):
     email: str
     senha: str
 
-class AtivarLicencaSchema(BaseModel):
-    chave: str
-    nome: str
-    email: str
-    senha: str
-
 class TransacaoSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -201,7 +184,7 @@ def login_usuario(credenciais: UsuarioLogin):
                                (email_limpo, hash_senha(credenciais.senha))).fetchone()
         
         if not u:
-            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos ou licença não ativada.")
+            raise HTTPException(status_code=401, detail="Acesso negado. E-mail não encontrado ou pagamento não aprovado via Cakto.")
         
         novo_token = secrets.token_hex(32)
         cursor.execute("UPDATE usuarios SET sessao_token = ? WHERE id = ?", (novo_token, u["id"]))
@@ -220,51 +203,46 @@ def verificar_sessao(usuario_id: int = Query(...), token: str = Query(...)):
         cursor = conn.cursor()
         u = cursor.execute("SELECT sessao_token FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
         if not u or u["sessao_token"] != token:
-            raise HTTPException(status_code=401, detail="Sessão encerrada por outro acesso simultâneo.")
+            raise HTTPException(status_code=401, detail="Sessão encerrada.")
         return {"valido": True}
-
-@app.post("/api/ativar-licenca")
-def ativar_licenca(payload: AtivarLicencaSchema):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        lic = cursor.execute("SELECT * FROM licencas WHERE chave = ? AND status = 'disponivel'", (payload.chave.strip(),)).fetchone()
-        if not lic:
-            raise HTTPException(status_code=400, detail="Chave de licença inválida ou já utilizada.")
-        
-        email_limpo = payload.email.lower().strip()
-        existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
-        if existente:
-            raise HTTPException(status_code=400, detail="Este e-mail já possui uma conta registada.")
-        
-        cursor.execute("""
-            INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)
-        """, (payload.nome, email_limpo, hash_senha(payload.senha)))
-        
-        cursor.execute("UPDATE licencas SET status = 'utilizada', email = ? WHERE id = ?", (email_limpo, lic["id"]))
-        conn.commit()
-        
-        uid = cursor.lastrowid
-        return {"sucesso": True, "usuario": {"id": uid, "nome": payload.nome, "email": email_limpo}}
 
 @app.post("/api/webhook/cakto")
 async def webhook_cakto(request: Request):
     try:
         dados = await request.json()
-        status_pagamento = dados.get("status") or dados.get("event")
         
-        if status_pagamento in ["approved", "paid", "order.paid"]:
-            nova_chave = f"ALVES-{secrets.token_hex(4).upper()}-{secrets.token_hex(4).upper()}"
+        status_pagamento = (
+            dados.get("status") or 
+            dados.get("event") or 
+            dados.get("data", {}).get("status") or 
+            ""
+        ).lower()
+        
+        cliente_dados = dados.get("data", {}).get("customer", {}) or dados.get("customer", {})
+        email_cliente = (cliente_dados.get("email") or dados.get("email") or "").lower().strip()
+        nome_cliente = cliente_dados.get("name") or dados.get("name") or "Cliente Pro"
+        
+        if any(keyword in status_pagamento for keyword in ["approved", "paid", "order.paid", "test", "sucesso"]) and email_cliente:
+            # Gera uma senha aleatória única e segura para este comprador específico
+            senha_aleatoria = secrets.token_hex(6)
+            senha_h = hash_senha(senha_aleatoria)
+            
             with sqlite3.connect(DB_PATH) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO licencas (chave, criado_em, status) VALUES (?, ?, 'disponivel')
-                """, (nova_chave, str(date.today())))
-                conn.commit()
-            return {"status": "licenca_gerada_com_sucesso", "chave": nova_chave}
+                existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_cliente,)).fetchone()
+                
+                if not existente:
+                    cursor.execute("""
+                        INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)
+                    """, (nome_cliente, email_cliente, senha_h))
+                    conn.commit()
+                    acao = "conta_criada_com_senha_unica"
+                else:
+                    acao = "cliente_ja_cadastrado"
+                    
+            return {"status": "sucesso", "acao": acao, "email": email_cliente, "senha_temporaria_gerada": senha_aleatoria}
             
-        return {"status": "ignorado"}
+        return {"status": "ignorado", "recebido": status_pagamento}
     except Exception as e:
         return {"erro": str(e)}
 
