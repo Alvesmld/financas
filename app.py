@@ -29,8 +29,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend completo com todas as funcionalidades, IA, Licenciamento Cakto e Anti-Sharing",
-    version="33.0.0"
+    description="Backend completo seguro com Licenciamento Cakto e Anti-Sharing",
+    version="34.0.0"
 )
 
 app.add_middleware(
@@ -134,14 +134,6 @@ def init_db():
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
             )
         """)
-        
-        cursor.execute("SELECT COUNT(*) FROM usuarios WHERE email = 'demo@financas.com'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("""
-                INSERT INTO usuarios (nome, email, senha_hash)
-                VALUES ('Usuário Convidado', 'demo@financas.com', ?)
-            """, (hashlib.sha256('123456'.encode()).hexdigest(),))
-            
         conn.commit()
 
 init_db()
@@ -209,7 +201,7 @@ def login_usuario(credenciais: UsuarioLogin):
                                (email_limpo, hash_senha(credenciais.senha))).fetchone()
         
         if not u:
-            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos ou acesso não autorizado.")
+            raise HTTPException(status_code=401, detail="E-mail ou senha incorretos ou licença não ativada.")
         
         novo_token = secrets.token_hex(32)
         cursor.execute("UPDATE usuarios SET sessao_token = ? WHERE id = ?", (novo_token, u["id"]))
