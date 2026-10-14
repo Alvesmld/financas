@@ -4,8 +4,6 @@ import io
 import csv
 import sqlite3
 import hashlib
-import base64
-import urllib.parse
 from pathlib import Path
 from datetime import date, timedelta
 from typing import List, Optional, Dict, Any
@@ -13,6 +11,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from PIL import Image
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -26,9 +25,9 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine",
-    description="Backend completo com suporte a imagens e rotas estáticas",
-    version="18.0.0"
+    title="Finanças Domésticas AI Engine Vision",
+    description="Backend completo com OCR Gemini Vision para leitura de contas",
+    version="19.0.0"
 )
 
 app.add_middleware(
@@ -71,7 +70,6 @@ def init_db():
                 tipo TEXT NOT NULL,
                 categoria TEXT NOT NULL,
                 data TEXT NOT NULL,
-                foto_base64 TEXT,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
             )
         """)
@@ -136,6 +134,15 @@ class UsuarioLogin(BaseModel):
     email: str
     senha: str
 
+class TransacaoSchema(BaseModel):
+    id: Optional[int] = None
+    usuario_id: int
+    descricao: str
+    valor: float
+    tipo: str
+    categoria: str
+    data: str
+
 class ContaPagarSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -194,18 +201,66 @@ def login_usuario(credenciais: UsuarioLogin):
             raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
         return {"sucesso": True, "usuario": {"id": u["id"], "nome": u["nome"], "email": u["email"]}}
 
-def buscar_transacoes_filtradas(usuario_id: int, data_inicio: str, data_fim: str, categoria: Optional[str] = None) -> List[Dict[str, Any]]:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        query = "SELECT * FROM transacoes WHERE usuario_id = ? AND data >= ? AND data <= ?"
-        params = [usuario_id, data_inicio, data_fim]
-        if categoria:
-            query += " AND categoria = ?"
-            params.append(categoria)
-        query += " ORDER BY data ASC, id ASC"
-        rows = cursor.execute(query, tuple(params)).fetchall()
-        return [dict(r) for r in rows]
+@app.post("/api/scanner-contas-foto")
+async def scanner_contas_foto(
+    usuario_id: int = Form(...),
+    foto: UploadFile = File(...)
+):
+    if not HAS_GEMINI_SDK:
+        raise HTTPException(status_code=400, detail="SDK Gemini não configurado ou chave em falta.")
+
+    try:
+        conteudo_imagem = await foto.read()
+        imagem = Image.open(io.BytesIO(conteudo_imagem))
+
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        prompt_vision = """
+        Esta imagem contém várias contas escritas em fileiras (linhas).
+        Analise a imagem e detete cada conta. Para cada conta, extraia:
+        - descricao: O nome da conta.
+        - valor: O valor numérico da conta (float).
+        - categoria: Escolha obrigatoriamente entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros'].
+        - status: 'paga' se houver a indicação "PG" riscada ou tachada ao lado da conta, ou 'pendente' caso contrário.
+
+        Retorne APENAS um JSON estrito no formato de lista:
+        [
+          {"descricao": "...", "valor": 0.00, "categoria": "...", "status": "pendente"|"paga"}
+        ]
+        """
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[imagem, prompt_vision]
+        )
+
+        texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
+        contas_detectadas = json.loads(texto_limpo)
+
+        hoje_str = str(date.today())
+        total_importadas = 0
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            for c in contas_detectadas:
+                cursor.execute("""
+                    INSERT INTO contas_a_pagar (usuario_id, descricao, valor, data_vencimento, categoria, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    usuario_id, 
+                    c.get("descricao", "Conta detetada"), 
+                    float(c.get("valor", 0.0)), 
+                    hoje_str, 
+                    c.get("categoria", "Outros"), 
+                    c.get("status", "pendente")
+                ))
+                total_importadas += 1
+            conn.commit()
+
+        return {"sucesso": True, "total_importadas": total_importadas, "itens": contas_detectadas}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar imagem com IA: {str(e)}")
 
 @app.get("/api/transacoes")
 def listar_transacoes(usuario_id: int = Query(...)):
@@ -216,29 +271,16 @@ def listar_transacoes(usuario_id: int = Query(...)):
         return [dict(r) for r in rows]
 
 @app.post("/api/transacoes")
-async def criar_transacao(
-    usuario_id: int = Form(...),
-    descricao: str = Form(...),
-    valor: float = Form(...),
-    tipo: str = Form(...),
-    categoria: str = Form(...),
-    data: str = Form(...),
-    foto: Optional[UploadFile] = File(None)
-):
-    foto_b64 = None
-    if foto:
-        conteudo_foto = await foto.read()
-        foto_b64 = base64.b64encode(conteudo_foto).decode('utf-8')
-
+def criar_transacao(transacao: TransacaoSchema):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data, foto_base64)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (usuario_id, descricao, valor, tipo, categoria, data, foto_b64))
+            INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (transacao.usuario_id, transacao.descricao, transacao.valor, transacao.tipo, transacao.categoria, transacao.data))
         conn.commit()
-        tid = cursor.lastrowid
-        return {"sucesso": True, "id": tid}
+        transacao.id = cursor.lastrowid
+        return transacao
 
 @app.delete("/api/transacoes/{transacao_id}")
 def deletar_transacao(transacao_id: int, usuario_id: int = Query(...)):

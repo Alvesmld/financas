@@ -73,8 +73,7 @@
     .painel-box { background: var(--card-bg); padding: 18px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border-color); width: 100%; overflow: hidden; }
     .titulo-painel { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 
-    .secao-planilha-ia { border: 2px solid #10b981; background: linear-gradient(180deg, rgba(16, 185, 129, 0.04) 0%, var(--card-bg) 100%); display: none; }
-    .secao-planilha-ia.ativa { display: block; }
+    .secao-scanner-ia { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--card-bg) 100%); }
 
     .secao-wishlist { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.03) 0%, var(--card-bg) 100%); }
     .grid-desejos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -132,9 +131,6 @@
     .meta-barra-bg { height: 8px; background: var(--border-color); border-radius: 10px; overflow: hidden; }
     .meta-barra-fill { height: 100%; background: var(--success); width: 0%; }
 
-    .foto-comprovativo-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color); cursor: pointer; }
-
-    /* ESTILOS RESPONSIVOS PARA MOBILE */
     @media (max-width: 900px) {
       .grid-duplo, .grid-triplo { grid-template-columns: 1fr; }
       body { padding: 10px 6px; }
@@ -223,6 +219,27 @@
       </div>
     </section>
 
+    <!-- SCANNER DE CONTAS POR FOTO (IA VISION) -->
+    <section class="painel-box secao-scanner-ia">
+      <h2 class="titulo-painel" style="color: var(--ai-purple);">
+        <span><i class="fa-solid fa-camera"></i> Scanner IA de Contas em Fileira</span>
+      </h2>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">
+        Tire foto ou envie a imagem da folha/caderno com as contas em fileiras. A IA lerá todas e detetará quais têm o <strong>"PG" riscado</strong> (já pagas).
+      </p>
+      <form id="form-scanner-foto" enctype="multipart/form-data">
+        <div class="linha-dupla-inputs">
+          <div class="grupo-input" style="flex: 2;">
+            <label for="input-foto-fileiras">Selecionar Foto da Lista de Contas</label>
+            <input type="file" id="input-foto-fileiras" accept="image/*" required>
+          </div>
+          <div class="grupo-input" style="justify-content: flex-end;">
+            <button type="submit" style="background: var(--ai-gradient);"><i class="fa-solid fa-wand-magic-sparkles"></i> Processar Contas</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
     <!-- LISTA DE DESEJOS & COMPARADOR DE LOJAS -->
     <section class="painel-box secao-wishlist">
       <h2 class="titulo-painel" style="color: var(--ai-purple);">
@@ -252,7 +269,7 @@
     </section>
 
     <!-- PAINEL DINÂMICO DA PLANILHA GERADA PELA IA -->
-    <section class="painel-box secao-planilha-ia" id="painel-planilha-ia">
+    <section class="painel-box secao-planilha-ia" id="painel-planilha-ia" style="display:none;">
       <div class="titulo-painel" style="color: var(--success);">
         <span><i class="fa-solid fa-table"></i> Planilha Solicitada à IA</span>
         <a id="btn-download-csv-ia" class="btn-exportar" href="#" target="_blank">
@@ -446,11 +463,11 @@
       </section>
     </div>
 
-    <!-- TRANSAÇÕES GERAIS E GRÁFICO GERAL (COM UPLOAD DE FOTO/COMPROVATIVO) -->
+    <!-- TRANSAÇÕES GERAIS E GRÁFICO GERAL -->
     <div class="grid-duplo">
       <section class="painel-box">
-        <h2 class="titulo-painel"><span><i class="fa-solid fa-pen-to-square"></i> Nova Transação (Com Foto)</span></h2>
-        <form id="form-transacao" enctype="multipart/form-data">
+        <h2 class="titulo-painel"><span><i class="fa-solid fa-pen-to-square"></i> Nova Transação Manual</span></h2>
+        <form id="form-transacao">
           <div class="grupo-input">
             <label for="input-descricao">Descrição</label>
             <input type="text" id="input-descricao" placeholder="Ex: Supermercado" required>
@@ -485,10 +502,6 @@
               <input type="date" id="input-data" required>
             </div>
           </div>
-          <div class="grupo-input">
-            <label for="input-foto">Foto / Comprovativo (Opcional)</label>
-            <input type="file" id="input-foto" accept="image/*">
-          </div>
           <button type="submit"><i class="fa-solid fa-plus"></i> Adicionar Transação</button>
         </form>
       </section>
@@ -513,7 +526,6 @@
         <table>
           <thead>
             <tr>
-              <th>Foto</th>
               <th>Descrição</th>
               <th>Categoria</th>
               <th>Data</th>
@@ -570,6 +582,7 @@
         
         initFormularios();
         initMentorIA();
+        initScannerFoto();
         carregarDadosGlobais();
         carregarProjecao(1);
       } else {
@@ -829,34 +842,21 @@
     function renderizarTabelaExtrato() {
       const corpo = document.getElementById('corpo-tabela-extrato');
       if (!transacoesGerais.length) {
-        corpo.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px;">Nenhum lançamento registado.</td></tr>`;
+        corpo.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:16px;">Nenhum lançamento registado.</td></tr>`;
         return;
       }
 
-      corpo.innerHTML = transacoesGerais.map(t => {
-        let imgHtml = '<span style="color:var(--text-muted); font-size:0.7rem;">Sem foto</span>';
-        if (t.foto_base64) {
-          imgHtml = `<img src="data:image/jpeg;base64,${t.foto_base64}" class="foto-comprovativo-thumb" onclick="abrirFotoModal('${t.foto_base64}')" title="Ver foto">`;
-        }
-
-        return `
-          <tr>
-            <td>${imgHtml}</td>
-            <td><strong>${t.descricao}</strong></td>
-            <td><span class="badge-categoria">${t.categoria}</span></td>
-            <td>${formatarDataBR(t.data)}</td>
-            <td class="${t.tipo === 'entrada' ? 'valor-entrada' : 'valor-saida'}">${t.tipo === 'entrada' ? '+' : '-'} ${formatarMoeda(Number(t.valor))}</td>
-            <td>
-              <button class="btn-excluir" onclick="deletarTransacao(${t.id})"><i class="fa-solid fa-trash"></i></button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    function abrirFotoModal(base64) {
-      const win = window.open();
-      win.document.write(`<iframe src="data:image/jpeg;base64,${base64}" frameborder="0" style="border:0; top:0; left:0; bottom:0; right:0; width:100%; height:100%;" allowfullscreen></iframe>`);
+      corpo.innerHTML = transacoesGerais.map(t => `
+        <tr>
+          <td><strong>${t.descricao}</strong></td>
+          <td><span class="badge-categoria">${t.categoria}</span></td>
+          <td>${formatarDataBR(t.data)}</td>
+          <td class="${t.tipo === 'entrada' ? 'valor-entrada' : 'valor-saida'}">${t.tipo === 'entrada' ? '+' : '-'} ${formatarMoeda(Number(t.valor))}</td>
+          <td>
+            <button class="btn-excluir" onclick="deletarTransacao(${t.id})"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        </tr>
+      `).join('');
     }
 
     function renderizarMetas() {
@@ -886,34 +886,6 @@
           </div>
         `;
       }).join('');
-    }
-
-    function exibirPlanilhaGeradaIA(dados) {
-      const painel = document.getElementById('painel-planilha-ia');
-      const corpo = document.getElementById('corpo-tabela-planilha-ia');
-      const subtitulo = document.getElementById('subtitulo-planilha-ia');
-      const btnExport = document.getElementById('btn-download-csv-ia');
-
-      painel.classList.add('ativa');
-      subtitulo.textContent = `Período: ${formatarDataBR(dados.data_inicio)} até ${formatarDataBR(dados.data_fim)}`;
-      btnExport.href = `${API_URL}/exportar-csv?usuario_id=${usuarioLogado.id}&data_inicio=${dados.data_inicio}&data_fim=${dados.data_fim}`;
-
-      if (!dados.itens || !dados.itens.length) {
-        corpo.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:12px;">Nenhum registo encontrado.</td></tr>`;
-        return;
-      }
-
-      corpo.innerHTML = dados.itens.map(t => `
-        <tr>
-          <td>${formatarDataBR(t.data)}</td>
-          <td><strong>${t.descricao}</strong></td>
-          <td><span class="badge-categoria">${t.categoria}</span></td>
-          <td>${t.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
-          <td class="${t.tipo === 'entrada' ? 'valor-entrada' : 'valor-saida'}">${t.tipo === 'entrada' ? '+' : '-'} ${formatarMoeda(Number(t.valor))}</td>
-        </tr>
-      `).join('');
-
-      painel.scrollIntoView({ behavior: 'smooth' });
     }
 
     async function deletarTransacao(id) {
@@ -1005,25 +977,51 @@
       }
     }
 
+    function initScannerFoto() {
+      document.getElementById('form-scanner-foto').onsubmit = async (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById('input-foto-fileiras');
+        if (!fileInput.files[0]) return;
+
+        const formData = new FormData();
+        formData.append('usuario_id', usuarioLogado.id);
+        formData.append('foto', fileInput.files[0]);
+
+        mostrarToast('IA a ler contas em fileiras e detetar "PG" riscado...', 'info');
+        try {
+          const resp = await fetch(`${API_URL}/scanner-contas-foto`, {
+            method: 'POST',
+            body: formData
+          });
+          const res = await resp.json();
+          if (resp.ok) {
+            mostrarToast(`Sucesso! ${res.total_importadas} contas processadas.`, 'sucesso');
+            e.target.reset();
+            await carregarDadosGlobais();
+          } else {
+            mostrarToast(res.detail || 'Erro ao processar imagem.', 'erro');
+          }
+        } catch (err) {
+          mostrarToast('Erro de comunicação com o servidor.', 'erro');
+        }
+      };
+    }
+
     function initFormularios() {
       document.getElementById('form-transacao').onsubmit = async (e) => {
         e.preventDefault();
-        const formData = new FormData();
-        formData.append('usuario_id', usuarioLogado.id);
-        formData.append('descricao', document.getElementById('input-descricao').value);
-        formData.append('valor', document.getElementById('input-valor').value);
-        formData.append('tipo', document.getElementById('select-tipo').value);
-        formData.append('categoria', document.getElementById('select-categoria').value);
-        formData.append('data', document.getElementById('input-data').value);
-        
-        const fotoInput = document.getElementById('input-foto');
-        if (fotoInput.files[0]) {
-          formData.append('foto', fotoInput.files[0]);
-        }
-
+        const nova = {
+          usuario_id: usuarioLogado.id,
+          descricao: document.getElementById('input-descricao').value,
+          valor: parseFloat(document.getElementById('input-valor').value),
+          tipo: document.getElementById('select-tipo').value,
+          categoria: document.getElementById('select-categoria').value,
+          data: document.getElementById('input-data').value
+        };
         await fetch(`${API_URL}/transacoes`, {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nova)
         });
         e.target.reset();
         document.getElementById('input-data').value = new Date().toISOString().split('T')[0];
@@ -1101,15 +1099,6 @@
         });
         const data = await resp.json();
         document.getElementById('texto-insight-ia').innerText = data.resposta;
-
-        if (data.tipo_acao === 'PLANILHA') {
-          exibirPlanilhaGeradaIA(data);
-          mostrarToast('Planilha gerada pela IA!', 'sucesso');
-        } else if (data.acao_executada) {
-          mostrarToast('Comando executado pela IA!', 'sucesso');
-          await carregarDadosGlobais();
-          await carregarProjecao(1);
-        }
         input.value = '';
       };
     }
