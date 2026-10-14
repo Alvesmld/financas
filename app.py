@@ -25,9 +25,9 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine Bolinha Chat",
-    description="Backend com assistente flutuante inteligente e execução de comandos",
-    version="24.0.0"
+    title="Finanças Domésticas AI Engine Support & Voice",
+    description="Backend com persistência segura de utilizadores e suporte de voz/foto",
+    version="25.0.0"
 )
 
 app.add_middleware(
@@ -204,6 +204,7 @@ class DepositoMetaSchema(BaseModel):
 class ChatPrompt(BaseModel):
     usuario_id: int
     pergunta: str
+    imagem_base64: Optional[str] = None
 
 @app.post("/api/cadastrar")
 def cadastrar_usuario(usuario: UsuarioCadastro):
@@ -218,7 +219,7 @@ def cadastrar_usuario(usuario: UsuarioCadastro):
             uid = cursor.lastrowid
             return {"sucesso": True, "usuario": {"id": uid, "nome": usuario.nome, "email": usuario.email}}
         except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="E-mail já registado.")
+            raise HTTPException(status_code=400, detail="E-mail já registado na base de dados.")
 
 @app.post("/api/login")
 def login_usuario(credenciais: UsuarioLogin):
@@ -237,30 +238,21 @@ async def scanner_contas_foto(
     foto: UploadFile = File(...)
 ):
     if not HAS_GEMINI_SDK:
-        raise HTTPException(status_code=400, detail="SDK Gemini não configurado ou chave em falta.")
+        raise HTTPException(status_code=400, detail="SDK Gemini não configurado.")
 
     try:
         conteudo_imagem = await foto.read()
         imagem = Image.open(io.BytesIO(conteudo_imagem))
 
         client = genai.Client(api_key=GEMINI_API_KEY)
-        
         prompt_vision = """
-        Analise esta imagem que contém várias contas listadas em fileiras (linhas).
-        1. Identifique o MÊS e o ANO impressos ou escritos na folha/caderno.
-        2. Para cada conta detetada na fileira, extraia:
-           - descricao: O nome da conta ou serviço.
-           - valor: O valor numérico (float).
-           - categoria: Escolha obrigatoriamente entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros'].
-           - status: 'paga' se ao lado da conta houver a sigla "PG" visível que esteja riscada, tachada ou com um traço por cima; caso contrário, defina 'pendente'.
-           - data_vencimento: A data de vencimento rigorosamente no padrão ISO "YYYY-MM-DD", sincronizando o dia da conta com o MÊS e ANO detetados.
-
-        Retorne APENAS um JSON estrito com o seguinte formato:
+        Analise esta imagem que contém várias contas listadas em fileiras.
+        1. Identifique o MÊS e o ANO impressos ou escritos na folha.
+        2. Para cada conta detetada, extraia: descricao, valor (float), categoria (entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros']), status ('paga' se tiver PG riscado, senão 'pendente'), data_vencimento (YYYY-MM-DD sincronizada).
+        Retorne APENAS um JSON estrito:
         {
           "mes_ano_detectado": "Outubro/2026",
-          "contas": [
-            {"descricao": "...", "valor": 0.00, "categoria": "...", "status": "pendente"|"paga", "data_vencimento": "YYYY-MM-DD"}
-          ]
+          "contas": [{"descricao": "...", "valor": 0.0, "categoria": "...", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
         }
         """
 
@@ -271,33 +263,21 @@ async def scanner_contas_foto(
 
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
         dados_ia = json.loads(texto_limpo)
-
-        mes_ano_detectado = dados_ia.get("mes_ano_detectado", "Mês Atual")
-        contas_detectadas = dados_ia.get("contas", [])
-
         total_importadas = 0
 
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            for c in contas_detectadas:
+            for c in dados_ia.get("contas", []):
                 cursor.execute("""
                     INSERT INTO contas_a_pagar (usuario_id, descricao, valor, data_vencimento, categoria, status)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    usuario_id, 
-                    c.get("descricao", "Conta detetada"), 
-                    float(c.get("valor", 0.0)), 
-                    c.get("data_vencimento", str(date.today())), 
-                    c.get("categoria", "Outros"), 
-                    c.get("status", "pendente")
-                ))
+                """, (usuario_id, c.get("descricao"), float(c.get("valor", 0.0)), c.get("data_vencimento"), c.get("categoria", "Outros"), c.get("status", "pendente")))
                 total_importadas += 1
             conn.commit()
 
-        return {"sucesso": True, "total_importadas": total_importadas, "mes_ano_detectado": mes_ano_detectado, "itens": contas_detectadas}
-
+        return {"sucesso": True, "total_importadas": total_importadas, "mes_ano_detectado": dados_ia.get("mes_ano_detectado")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao processar imagem com IA: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/transacoes")
 def listar_transacoes(usuario_id: int = Query(...)):
@@ -336,12 +316,7 @@ def obter_dados_hoje(usuario_id: int = Query(...)):
         transacoes_hoje = cursor.execute("SELECT * FROM transacoes WHERE usuario_id = ? AND data = ? ORDER BY id DESC", (usuario_id, hoje_str)).fetchall()
         entradas = sum(t["valor"] for t in transacoes_hoje if t["tipo"] == "entrada")
         saidas = sum(t["valor"] for t in transacoes_hoje if t["tipo"] == "saida")
-        return {
-            "data": hoje_str,
-            "total_entradas": round(entradas, 2),
-            "total_saidas": round(saidas, 2),
-            "transacoes": [dict(t) for t in transacoes_hoje]
-        }
+        return {"data": hoje_str, "total_entradas": round(entradas, 2), "total_saidas": round(saidas, 2), "transacoes": [dict(t) for t in transacoes_hoje]}
 
 @app.get("/api/projecao/{meses}")
 def api_projecao(meses: int, usuario_id: int = Query(...)):
@@ -354,20 +329,11 @@ def api_projecao(meses: int, usuario_id: int = Query(...)):
         entradas = sum(t["valor"] for t in transacoes if t["tipo"] == "entrada")
         saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
         saldo_atual = entradas - saidas
-        
         data_limite = date.today() + timedelta(days=30 * meses)
         total_contas = sum(c["valor"] for c in contas if c["data_vencimento"] <= str(data_limite))
-        
         saldo_final = saldo_atual + (entradas * meses) - (saidas * meses) - total_contas
         
-        return {
-            "periodo_meses": meses,
-            "saldo_atual": round(saldo_atual, 2),
-            "entradas_estimadas": round(entradas * meses, 2),
-            "saidas_estimadas": round(saidas * meses, 2),
-            "contas_agendadas": round(total_contas, 2),
-            "saldo_projetado_final": round(saldo_final, 2)
-        }
+        return {"periodo_meses": meses, "saldo_atual": round(saldo_atual, 2), "entradas_estimadas": round(entradas * meses, 2), "saidas_estimadas": round(saidas * meses, 2), "contas_agendadas": round(total_contas, 2), "saldo_projetado_final": round(saldo_final, 2)}
 
 @app.get("/api/contas", response_model=List[ContaPagarSchema])
 def listar_contas(usuario_id: int = Query(...)):
@@ -404,12 +370,10 @@ def atualizar_conta(conta_id: int, payload: AtualizarContaSchema, usuario_id: in
         cursor = conn.cursor()
         conta = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ? AND usuario_id = ?", (conta_id, usuario_id)).fetchone()
         if not conta: raise HTTPException(status_code=404, detail="Conta não encontrada.")
-        
         nova_desc = payload.descricao if payload.descricao is not None else conta["descricao"]
         cursor.execute("UPDATE contas_a_pagar SET descricao = ? WHERE id = ?", (nova_desc, conta_id))
         conn.commit()
-        conta_atualizada = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ?", (conta_id,)).fetchone()
-        return dict(conta_atualizada)
+        return dict(cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ?", (conta_id,)).fetchone())
 
 @app.put("/api/contas/{conta_id}/status")
 def alterar_status_conta(conta_id: int, payload: AtualizarStatusSchema, usuario_id: int = Query(...)):
@@ -418,15 +382,12 @@ def alterar_status_conta(conta_id: int, payload: AtualizarStatusSchema, usuario_
         cursor = conn.cursor()
         conta = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ? AND usuario_id = ?", (conta_id, usuario_id)).fetchone()
         if not conta: raise HTTPException(status_code=404, detail="Conta não encontrada.")
-            
         cursor.execute("UPDATE contas_a_pagar SET status = ? WHERE id = ?", (payload.status, conta_id))
-        
         if payload.status == 'paga':
             cursor.execute("""
                 INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
                 VALUES (?, ?, ?, 'saida', ?, ?)
             """, (usuario_id, f"Pagamento: {conta['descricao']}", conta["valor"], conta["categoria"], str(date.today())))
-        
         conn.commit()
         return {"sucesso": True, "novo_status": payload.status}
 
@@ -465,12 +426,10 @@ def atualizar_meta(meta_id: int, payload: AtualizarMetaSchema, usuario_id: int =
         cursor = conn.cursor()
         meta = cursor.execute("SELECT * FROM metas_economia WHERE id = ? AND usuario_id = ?", (meta_id, usuario_id)).fetchone()
         if not meta: raise HTTPException(status_code=404, detail="Meta não encontrada.")
-        
         novo_titulo = payload.titulo if payload.titulo is not None else meta["titulo"]
         cursor.execute("UPDATE metas_economia SET titulo = ? WHERE id = ?", (novo_titulo, meta_id))
         conn.commit()
-        meta_atualizada = cursor.execute("SELECT * FROM metas_economia WHERE id = ?", (meta_id,)).fetchone()
-        return dict(meta_atualizada)
+        return dict(cursor.execute("SELECT * FROM metas_economia WHERE id = ?", (meta_id,)).fetchone())
 
 @app.put("/api/metas/{meta_id}/depositar")
 def depositar_meta(meta_id: int, payload: DepositoMetaSchema, usuario_id: int = Query(...)):
@@ -479,7 +438,6 @@ def depositar_meta(meta_id: int, payload: DepositoMetaSchema, usuario_id: int = 
         cursor = conn.cursor()
         meta = cursor.execute("SELECT * FROM metas_economia WHERE id = ? AND usuario_id = ?", (meta_id, usuario_id)).fetchone()
         if not meta: raise HTTPException(status_code=404, detail="Meta não encontrada.")
-        
         novo_valor = meta["valor_atual"] + payload.valor
         cursor.execute("UPDATE metas_economia SET valor_atual = ? WHERE id = ?", (novo_valor, meta_id))
         cursor.execute("""
@@ -524,12 +482,10 @@ def atualizar_desejo(desejo_id: int, payload: AtualizarDesejoSchema, usuario_id:
         cursor = conn.cursor()
         desejo = cursor.execute("SELECT * FROM lista_desejos WHERE id = ? AND usuario_id = ?", (desejo_id, usuario_id)).fetchone()
         if not desejo: raise HTTPException(status_code=404, detail="Item não encontrado.")
-        
         novo_titulo = payload.titulo if payload.titulo is not None else desejo["titulo"]
         cursor.execute("UPDATE lista_desejos SET titulo = ? WHERE id = ?", (novo_titulo, desejo_id))
         conn.commit()
-        desejo_atualizado = cursor.execute("SELECT * FROM lista_desejos WHERE id = ?", (desejo_id,)).fetchone()
-        return dict(desejo_atualizado)
+        return dict(cursor.execute("SELECT * FROM lista_desejos WHERE id = ?", (desejo_id,)).fetchone())
 
 @app.post("/api/desejos/{desejo_id}/analisar")
 def api_analisar_desejo(desejo_id: int, usuario_id: int = Query(...)):
@@ -539,14 +495,11 @@ def api_analisar_desejo(desejo_id: int, usuario_id: int = Query(...)):
         desejo = cursor.execute("SELECT * FROM lista_desejos WHERE id = ? AND usuario_id = ?", (desejo_id, usuario_id)).fetchone()
         if not desejo: raise HTTPException(status_code=404, detail="Item não encontrado.")
         transacoes = cursor.execute("SELECT * FROM transacoes WHERE usuario_id = ?", (usuario_id,)).fetchall()
-        
         entradas = sum(t["valor"] for t in transacoes if t["tipo"] == "entrada")
         saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
         saldo = entradas - saidas
-        
         restante = saldo - desejo["valor"]
-        parecer = f"Comprando '{desejo['titulo']}' (R$ {desejo['valor']:.2f}), o seu saldo passará a ser R$ {restante:.2f}."
-        return {"parecer": parecer}
+        return {"parecer": f"Comprando '{desejo['titulo']}' (R$ {desejo['valor']:.2f}), o seu saldo passará a ser R$ {restante:.2f}."}
 
 @app.delete("/api/desejos/{desejo_id}")
 def deletar_desejo(desejo_id: int, usuario_id: int = Query(...)):
@@ -577,16 +530,12 @@ def exportar_csv(usuario_id: int = Query(...), data_inicio: Optional[str] = Quer
 
 @app.post("/api/chat-ai")
 def chat_mentor(payload: ChatPrompt):
-    pergunta = payload.pergunta.lower().strip()
     uid = payload.usuario_id
-
     if not HAS_GEMINI_SDK:
-        return {"resposta": "Chave Gemini não configurada no servidor.", "acao_executada": False}
+        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False}
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        
-        # Coleta resumo financeiro atual para a IA ter contexto
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -595,35 +544,37 @@ def chat_mentor(payload: ChatPrompt):
             saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
             saldo = entradas - saidas
 
-        prompt_sistema = f"""
-        Você é o JARVIS, um assistente financeiro pessoal integrado num aplicativo.
-        O saldo atual do usuário é R$ {saldo:.2f}.
-        O usuário pode pedir para:
-        1. Adicionar gastos ou receitas (ex: "adicionei gasto de mercado 150 reais hoje").
-        2. Gerar planilha / filtrar extrato a partir de uma data (ex: "monte uma planilha do dia 15 em diante").
+        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido do utilizador: {payload.pergunta}"]
         
-        Se o usuário pediu para adicionar transações, retorne um JSON estruturado indicando a ação.
-        Se o usuário pediu planilha/extrato a partir de uma data, identifique a data de início (formato YYYY-MM-DD).
-        
-        Responda obrigatoriamente num JSON com esta estrutura exata:
+        if payload.imagem_base64:
+            header, encoded = payload.imagem_base64.split(",", 1)
+            import base64
+            img_bytes = base64.b64decode(encoded)
+            imagem = Image.open(io.BytesIO(img_bytes))
+            conteudo_prompt.insert(0, imagem)
+
+        prompt_sistema = """
+        Você é o JARVIS, assistente de suporte financeiro. Analise o pedido (e foto se houver).
+        Retorne APENAS um JSON estrito:
         {
-          "resposta_texto": "Mensagem amigável para o usuário explicando o que foi feito.",
+          "resposta_texto": "...",
           "acao": "adicionar_transacao" | "gerar_planilha_data" | "nenhuma",
-          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida"|"entrada", "categoria": "...", "data": "YYYY-MM-DD"},
+          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"},
           "filtro_data_inicio": "YYYY-MM-DD"
         }
         """
+        conteudo_prompt.insert(0, prompt_sistema)
 
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[prompt_sistema, f"Pedido do usuário: {payload.pergunta}"]
+            contents=conteudo_prompt
         )
 
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
         resultado = json.loads(texto_limpo)
 
         acao_executada = False
-        resposta_final = resultado.get("resposta_texto", "Comando processado.")
+        resposta_final = resultado.get("resposta_texto", "Processado.")
         acao = resultado.get("acao")
 
         if acao == "adicionar_transacao":
@@ -633,25 +584,13 @@ def chat_mentor(payload: ChatPrompt):
                 cursor.execute("""
                     INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    uid,
-                    d.get("descricao", "Gasto IA"),
-                    float(d.get("valor", 0.0)),
-                    d.get("tipo", "saida"),
-                    d.get("categoria", "Outros"),
-                    d.get("data", str(date.today()))
-                ))
+                """, (uid, d.get("descricao", "Item"), float(d.get("valor", 0.0)), d.get("tipo", "saida"), d.get("categoria", "Outros"), d.get("data", str(date.today()))))
                 conn.commit()
             acao_executada = True
 
-        elif acao == "gerar_planilha_data":
-            d_ini = resultado.get("filtro_data_inicio", str(date.today()))
-            resposta_final += f" (Filtro aplicado na exportação a partir de {d_ini}). Use o botão Exportar CSV na tabela abaixo para baixar."
-
         return {"resposta": resposta_final, "acao_executada": acao_executada}
-
     except Exception as e:
-        return {"resposta": f"Entendi o seu pedido, mas ocorreu um pequeno erro ao processar: {str(e)}", "acao_executada": False}
+        return {"resposta": f"Erro ao processar: {str(e)}", "acao_executada": False}
 
 if __name__ == "__main__":
     import uvicorn

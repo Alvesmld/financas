@@ -107,26 +107,35 @@
     button[type="submit"], .btn-acao { background-color: var(--primary); color: white; border: none; padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; width: 100%; }
     .btn-exportar { background-color: var(--success); color: white; border: none; padding: 8px 12px; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; font-size: 0.8rem; }
 
-    /* BOLINHA FLUTUANTE DA IA NO CANTO DA TELA */
+    /* BOLINHA DE SUPORTE FLUTUANTE & VOZ */
     #bolinha-ia-container { position: fixed; bottom: 24px; right: 24px; z-index: 40000; display: flex; flex-direction: column; align-items: flex-end; }
-    #btn-bolinha-ia { width: 60px; height: 60px; border-radius: 50%; background: var(--ai-gradient); border: none; color: white; font-size: 1.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(139, 92, 246, 0.5); display: flex; align-items: center; justify-content: center; transition: transform 0.2s; position: relative; }
+    #btn-bolinha-ia { width: 62px; height: 62px; border-radius: 50%; background: var(--ai-gradient); border: none; color: white; font-size: 1.6rem; cursor: pointer; box-shadow: 0 10px 25px rgba(139, 92, 246, 0.4); display: flex; align-items: center; justify-content: center; transition: transform 0.2s; position: relative; }
     #btn-bolinha-ia:hover { transform: scale(1.08); }
-    #bolinha-notif { position: absolute; top: 0; right: 0; width: 16px; height: 16px; background: var(--success); border-radius: 50%; border: 2px solid var(--card-bg); display: none; }
+    #bolinha-notif { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; background: var(--success); border-radius: 50%; border: 2px solid var(--card-bg); display: none; }
 
-    /* JANELA DE CHAT FLUTUANTE */
-    #janela-chat-ia { position: fixed; bottom: 96px; right: 24px; width: 360px; max-width: calc(100vw - 32px); height: 500px; max-height: calc(100vh - 120px); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 40001; display: none; flex-direction: column; overflow: hidden; animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    /* JANELA DE CHAT / SUPORTE COM VOZ E FOTO */
+    #janela-chat-ia { position: fixed; bottom: 98px; right: 24px; width: 380px; max-width: calc(100vw - 24px); height: 540px; max-height: calc(100vh - 120px); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 40001; display: none; flex-direction: column; overflow: hidden; animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     @keyframes popUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-    .chat-header { background: var(--ai-gradient); color: white; padding: 14px; font-weight: 800; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
-    .chat-mensagens { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; }
-    .msg-chat { padding: 10px 14px; border-radius: 12px; max-width: 85%; word-break: break-word; line-height: 1.4; }
+    .chat-header { background: var(--ai-gradient); color: white; padding: 14px 16px; font-weight: 800; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; }
+    .chat-subtitulo { font-size: 0.65rem; opacity: 0.85; font-weight: 600; text-transform: uppercase; }
+    .chat-mensagens { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem; }
+    
+    .msg-chat { padding: 10px 14px; border-radius: 12px; max-width: 85%; word-break: break-word; line-height: 1.4; display: flex; flex-direction: column; gap: 6px; }
     .msg-chat.ia { background: var(--input-bg); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 2px; border-left: 3px solid var(--ai-purple); }
     .msg-chat.usuario { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-    .msg-chat.status-acao { background: rgba(139, 92, 246, 0.1); color: var(--ai-purple); font-style: italic; align-self: center; font-size: 0.75rem; border: 1px dashed var(--ai-purple); text-align: center; width: 100%; border-radius: 8px; }
+    .msg-chat.status-acao { background: rgba(139, 92, 246, 0.1); color: var(--ai-purple); font-style: italic; align-self: center; font-size: 0.75rem; border: 1px dashed var(--ai-purple); text-align: center; width: 100%; border-radius: 8px; padding: 8px; }
+    .msg-chat img { max-width: 100%; border-radius: 8px; margin-top: 4px; border: 1px solid var(--border-color); }
 
-    .chat-footer { padding: 10px; background: var(--bg-color); border-top: 1px solid var(--border-color); display: flex; gap: 8px; }
-    .chat-footer input { flex: 1; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-main); outline: none; font-size: 0.85rem; }
-    .chat-footer button { background: var(--ai-purple); color: white; border: none; width: 42px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+    .chat-footer { padding: 10px 14px; background: var(--bg-color); border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; }
+    .chat-footer-inputs { display: flex; gap: 6px; align-items: center; }
+    .chat-footer input[type="text"] { flex: 1; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-main); outline: none; font-size: 0.85rem; }
+    .btn-chat-enviar { background: var(--ai-purple); color: white; border: none; width: 38px; height: 38px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+    .btn-chat-acao { background: var(--input-bg); border: 1.5px solid var(--border-color); color: var(--text-main); width: 38px; height: 38px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+    .btn-chat-acao.ouvindo { background: var(--danger); color: white; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+    .preview-foto-chat { display: none; align-items: center; justify-content: space-between; background: var(--input-bg); padding: 6px 10px; border-radius: 6px; font-size: 0.75rem; color: var(--ai-purple); font-weight: 700; }
 
     .tabela-responsive { width: 100%; overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); -webkit-overflow-scrolling: touch; }
     table { width: 100%; border-collapse: collapse; text-align: left; min-width: 480px; }
@@ -157,34 +166,51 @@
       .container { gap: 12px; }
       .painel-box { padding: 14px; }
       .valor-card { font-size: 1.25rem; }
+      #janela-chat-ia { width: 100vw; height: 100vh; bottom: 0; right: 0; border-radius: 0; max-height: 100vh; }
     }
   </style>
 </head>
 <body>
 
-  <!-- BOLINHA FLUTUANTE DA IA -->
+  <!-- BOLINHA & JANELA DE SUPORTE COM VOZ E FOTO -->
   <div id="bolinha-ia-container" style="display: none;">
     <div id="janela-chat-ia">
       <div class="chat-header">
-        <span><i class="fa-solid fa-robot"></i> JARVIS IA Financeira</span>
-        <button onclick="alternarJanelaChat()" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;"><i class="fa-solid fa-xmark"></i></button>
+        <div>
+          <div><i class="fa-solid fa-headset"></i> Suporte & Assistente JARVIS</div>
+          <div class="chat-subtitulo">Online • Voz, Texto e Fotos</div>
+        </div>
+        <button onclick="alternarJanelaChat()" style="background:none; border:none; color:white; cursor:pointer; font-size:1.2rem;"><i class="fa-solid fa-xmark"></i></button>
       </div>
+
       <div class="chat-mensagens" id="chat-mensagens-corpo">
-        <div class="msg-chat ia">Olá! Sou o seu assistente financeiro. Pode pedir-me para adicionar gastos, consultar saldo ou gerar planilhas (ex: <i>'Monte uma planilha a partir do dia 15'</i>).</div>
+        <div class="msg-chat ia">
+          <span>Olá! Sou o seu assistente de suporte financeiro. Pode falar pelo microfone 🎙️, enviar fotos 📷 ou digitar comandos.</span>
+        </div>
       </div>
+
       <div class="chat-footer">
-        <input type="text" id="input-chat-flutuante" placeholder="Digite seu pedido...">
-        <button id="btn-enviar-chat-flutuante"><i class="fa-solid fa-paper-plane"></i></button>
+        <div class="preview-foto-chat" id="preview-foto-chat">
+          <span id="nome-foto-chat"><i class="fa-solid fa-image"></i> Foto anexada</span>
+          <button onclick="removerFotoChat()" style="background:none; border:none; color:var(--danger); cursor:pointer;"><i class="fa-solid fa-trash"></i></button>
+        </div>
+        <div class="chat-footer-inputs">
+          <input type="file" id="input-chat-foto-file" accept="image/*" style="display: none;" onchange="aoSelecionarFotoChat(this)">
+          <button class="btn-chat-acao" onclick="document.getElementById('input-chat-foto-file').click()" title="Anexar foto"><i class="fa-solid fa-camera"></i></button>
+          <button class="btn-chat-acao" id="btn-ouvir-voz" onclick="alternarGravacaoVoz()" title="Falar por voz"><i class="fa-solid fa-microphone"></i></button>
+          <input type="text" id="input-chat-flutuante" placeholder="Digite ou fale seu pedido...">
+          <button class="btn-chat-enviar" id="btn-enviar-chat-flutuante"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
       </div>
     </div>
 
-    <button id="btn-bolinha-ia" onclick="alternarJanelaChat()" title="Conversar com a IA">
-      <i class="fa-solid fa-wand-magic-sparkles"></i>
+    <button id="btn-bolinha-ia" onclick="alternarJanelaChat()" title="Abrir Suporte IA">
+      <i class="fa-solid fa-comments"></i>
       <span id="bolinha-notif"></span>
     </button>
   </div>
 
-  <!-- TELA DE LOGIN / CADASTRO -->
+  <!-- TELA DE LOGIN -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2><i class="fa-solid fa-wallet"></i> Finanças Domésticas</h2>
@@ -518,7 +544,7 @@
     <section class="painel-box">
       <div class="titulo-painel">
         <span><i class="fa-solid fa-list-check"></i> Extrato Completo</span>
-        <div style="display:flex; gap: 8px;">
+        <div style="display:flex; gap: 8px; flex-wrap: wrap;">
           <input type="date" id="filtro-csv-inicio" style="padding:6px; font-size:0.75rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
           <input type="date" id="filtro-csv-fim" style="padding:6px; font-size:0.75rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
           <a id="btn-exportar-extrato" class="btn-exportar" href="#" onclick="atualizarLinkExportacao(event)" target="_blank">
@@ -546,6 +572,9 @@
   <script>
     const API_URL = '/api';
     let usuarioLogado = null;
+    let fotoChatSelecionadaBase64 = null;
+    let reconhecimentoVoz = null;
+    let estaGravandoVoz = false;
 
     let transacoesGerais = [];
     let transacoesHoje = [];
@@ -569,6 +598,7 @@
       verificarSessao();
       initAuthFormularios();
       aplicarTemaSalvo();
+      initReconhecimentoVoz();
     });
 
     function verificarSessao() {
@@ -641,8 +671,7 @@
             mostrarToast(res.detail || 'Senha ou e-mail inválidos.', 'erro');
           }
         } catch (err) {
-          mostrarToast('Entrando como convidado...', 'erro');
-          entrarComoDemo();
+          mostrarToast('Erro ao ligar ao servidor.', 'erro');
         }
       };
 
@@ -661,7 +690,7 @@
           const res = await resp.json();
           if (resp.ok) {
             localStorage.setItem('usuario_logado', JSON.stringify(res.usuario));
-            mostrarToast('Conta criada!', 'sucesso');
+            mostrarToast('Conta criada e guardada com sucesso!', 'sucesso');
             verificarSessao();
           } else {
             mostrarToast(res.detail || 'Erro ao criar conta.', 'erro');
@@ -694,6 +723,72 @@
         const corpo = document.getElementById('chat-mensagens-corpo');
         corpo.scrollTop = corpo.scrollHeight;
       }
+    }
+
+    function aoSelecionarFotoChat(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          fotoChatSelecionadaBase64 = e.target.result;
+          document.getElementById('nome-foto-chat').innerHTML = `<i class="fa-solid fa-image"></i> ${input.files[0].name}`;
+          document.getElementById('preview-foto-chat').style.display = 'flex';
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    function removerFotoChat() {
+      fotoChatSelecionadaBase64 = null;
+      document.getElementById('input-chat-foto-file').value = '';
+      document.getElementById('preview-foto-chat').style.display = 'none';
+    }
+
+    function initReconhecimentoVoz() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        reconhecimentoVoz = new SpeechRecognition();
+        reconhecimentoVoz.lang = 'pt-BR';
+        reconhecimentoVoz.interimResults = false;
+        reconhecimentoVoz.maxAlternatives = 1;
+
+        reconhecimentoVoz.onresult = (event) => {
+          const textoFalado = event.results[0][0].transcript;
+          document.getElementById('input-chat-flutuante').value = textoFalado;
+          pararGravacaoVoz();
+          document.getElementById('btn-enviar-chat-flutuante').click();
+        };
+
+        reconhecimentoVoz.onerror = () => {
+          pararGravacaoVoz();
+          mostrarToast('Não foi possível captar a voz.', 'erro');
+        };
+
+        reconhecimentoVoz.onend = () => {
+          pararGravacaoVoz();
+        };
+      }
+    }
+
+    function alternarGravacaoVoz() {
+      if (!reconhecimentoVoz) {
+        mostrarToast('Seu navegador não suporta reconhecimento de voz.', 'erro');
+        return;
+      }
+      const btnVoz = document.getElementById('btn-ouvir-voz');
+      if (estaGravandoVoz) {
+        reconhecimentoVoz.stop();
+      } else {
+        reconhecimentoVoz.start();
+        estaGravandoVoz = true;
+        btnVoz.classList.add('ouvindo');
+        mostrarToast('Ouvindo... Fale agora.', 'info');
+      }
+    }
+
+    function pararGravacaoVoz() {
+      estaGravandoVoz = false;
+      const btnVoz = document.getElementById('btn-ouvir-voz');
+      if (btnVoz) btnVoz.classList.remove('ouvindo');
     }
 
     function atualizarLinkExportacao(e) {
@@ -1104,7 +1199,7 @@
           btnSubmit.disabled = false;
 
           if (resp.ok) {
-            mostrarToast(`Sucesso! ${res.total_importadas} contas sincronizadas (${res.mes_ano_detectado}).`, 'sucesso');
+            mostrarToast(`Sucesso! Contas sincronizadas (${res.mes_ano_detectado}).`, 'sucesso');
             e.target.reset();
             await carregarDadosGlobais();
           } else {
@@ -1206,34 +1301,44 @@
 
       const enviarMsg = async () => {
         const texto = inputChat.value.trim();
-        if (!texto) return;
+        if (!texto && !fotoChatSelecionadaBase64) return;
 
-        // Adiciona balão do utilizador
-        corpoChat.innerHTML += `<div class="msg-chat usuario">${texto}</div>`;
+        let htmlUsuario = `<div class="msg-chat usuario">`;
+        if (fotoChatSelecionadaBase64) {
+          htmlUsuario += `<img src="${fotoChatSelecionadaBase64}">`;
+        }
+        if (texto) {
+          htmlUsuario += `<span>${texto}</span>`;
+        }
+        htmlUsuario += `</div>`;
+
+        corpoChat.innerHTML += htmlUsuario;
+        const imgParaEnviar = fotoChatSelecionadaBase64;
+        
         inputChat.value = '';
+        removerFotoChat();
         corpoChat.scrollTop = corpoChat.scrollHeight;
 
-        // Indicador visível de "pensando / executando"
         const idStatus = 'status-ia-' + Date.now();
-        corpoChat.innerHTML += `<div class="msg-chat status-acao" id="${idStatus}"><i class="fa-solid fa-spinner fa-spin"></i> JARVIS está a processar o seu pedido...</div>`;
+        corpoChat.innerHTML += `<div class="msg-chat status-acao" id="${idStatus}"><i class="fa-solid fa-spinner fa-spin"></i> JARVIS está a processar...</div>`;
         corpoChat.scrollTop = corpoChat.scrollHeight;
 
         try {
           const resp = await fetch(`${API_URL}/chat-ai`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario_id: usuarioLogado.id, pergunta: texto })
+            body: JSON.stringify({ 
+              usuario_id: usuarioLogado.id, 
+              pergunta: texto || "Analise esta imagem enviada.",
+              imagem_base64: imgParaEnviar 
+            })
           });
           const res = await resp.json();
 
-          // Remove indicador de loading
           document.getElementById(idStatus).remove();
-
-          // Adiciona resposta da IA
           corpoChat.innerHTML += `<div class="msg-chat ia">${res.resposta}</div>`;
           corpoChat.scrollTop = corpoChat.scrollHeight;
 
-          // Se a IA executou alguma ação que alterou dados, recarrega o dashboard
           if (res.acao_executada) {
             await carregarDadosGlobais();
             await carregarProjecao(1);
