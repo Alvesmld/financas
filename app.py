@@ -21,6 +21,85 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SENHA_FAMILIAR_MESTRA = os.getenv("SENHA_FAMILIAR_MESTRA", "").strip()
 
+
+import requests
+
+
+def _ai_provider_order():
+    """Lista de provedores configurável; os indisponíveis são ignorados na tentativa."""
+    raw = os.getenv("AI_PROVIDERS", "gemini,openai,ollama")
+    return [p.strip().lower() for p in raw.split(",") if p.strip()]
+
+
+def _extract_response_text(value):
+    text = (value or "").strip()
+    if text.startswith("```"):
+        text = text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    return text[start:end + 1] if start >= 0 and end > start else text
+
+
+def _generate_text_with_provider(system_prompt: str, user_prompt: str) -> tuple[str, str]:
+    """Tenta provedores de IA em sequência. Ollama funciona quando o backend alcança o host local."""
+    failures = []
+    for provider in _ai_provider_order():
+        try:
+            if provider == "gemini":
+                key = os.getenv("GEMINI_API_KEY", "").strip()
+                if not key:
+                    failures.append("gemini: GEMINI_API_KEY ausente")
+                    continue
+                from google import genai
+                client = genai.Client(api_key=key)
+                models = [os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")]
+                for model in dict.fromkeys(models):
+                    try:
+                        response = client.models.generate_content(model=model, contents=[system_prompt, user_prompt])
+                        answer = getattr(response, "text", None)
+                        if answer and answer.strip():
+                            return answer.strip(), f"gemini:{model}"
+                        failures.append(f"gemini:{model}: resposta vazia")
+                    except Exception as exc:
+                        failures.append(f"gemini:{model}: {type(exc).__name__}: {exc}")
+            elif provider in ("openai", "openai_compatible", "openrouter", "lmstudio"):
+                key = os.getenv("OPENAI_API_KEY", "").strip()
+                base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+                model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+                if not key and base.startswith("https://api.openai.com"):
+                    failures.append("openai: OPENAI_API_KEY ausente")
+                    continue
+                response = requests.post(base + "/chat/completions", timeout=90,
+                    headers={"Authorization": f"Bearer {key}" if key else "", "Content-Type": "application/json"},
+                    json={"model": model, "temperature": 0.2, "messages": [
+                        {"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}
+                    ]})
+                response.raise_for_status()
+                answer = response.json()["choices"][0]["message"]["content"]
+                if isinstance(answer, list):
+                    answer = "\n".join(str(x.get("text", "")) for x in answer if isinstance(x, dict))
+                if answer and str(answer).strip():
+                    return str(answer).strip(), f"{provider}:{model}"
+                failures.append(f"{provider}: resposta vazia")
+            elif provider == "ollama":
+                base = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+                model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+                response = requests.post(base + "/api/chat", timeout=120,
+                    json={"model": model, "stream": False, "messages": [
+                        {"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}
+                    ], "options": {"temperature": 0.2}})
+                response.raise_for_status()
+                answer = response.json().get("message", {}).get("content", "")
+                if answer.strip():
+                    return answer.strip(), f"ollama:{model}"
+                failures.append("ollama: resposta vazia")
+            else:
+                failures.append(f"provedor desconhecido: {provider}")
+        except Exception as exc:
+            failures.append(f"{provider}: {type(exc).__name__}: {exc}")
+    import logging
+    logging.error("Todos os provedores de IA falharam: %s", " | ".join(failures))
+    raise RuntimeError("Nenhum provedor de IA respondeu. Confira as variáveis e os logs do backend.")
+
 try:
     from google import genai
     from google.genai import types
@@ -31,7 +110,7 @@ except ImportError:
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
     description="Backend completo com todas as funcionalidades, IA, Licenciamento Cakto e Anti-Sharing",
-    version="33.0.0"
+    version="34.0.0"
 )
 
 app.add_middleware(
@@ -373,7 +452,7 @@ async def scanner_contas_foto(
     foto: UploadFile = File(...)
 ):
     if not HAS_GEMINI_SDK:
-        raise HTTPException(status_code=400, detail="SDK Gemini não configurado.")
+        raise HTTPException(status_code=400, detail="O scanner de imagens/PDF precisa de GEMINI_API_KEY configurada. Chat de texto aceita Gemini, OpenAI compatível e Ollama.")
 
     try:
         conteudo_ficheiro = await foto.read()
@@ -397,7 +476,7 @@ async def scanner_contas_foto(
         """
         response = None
         falhas = []
-        for modelo in (os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "gemini-2.0-flash"):
+        for modelo in dict.fromkeys([os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")]):
             try:
                 response = client.models.generate_content(model=modelo, contents=[part_file, prompt_vision])
                 if response and getattr(response, "text", None):
@@ -615,17 +694,25 @@ def _data_transacao_ia(dados: dict, pergunta: str) -> str:
 
 @app.get("/api/health/ia")
 def status_ia():
-    return {"chave_configurada": bool(os.getenv("GEMINI_API_KEY", "").strip()), "sdk_instalado": HAS_GEMINI_SDK, "modelo": os.getenv("GEMINI_MODEL", "gemini-2.5-flash")}
+    providers = _ai_provider_order()
+    return {
+        "provedores_configurados": providers,
+        "gemini_chave_configurada": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+        "gemini_sdk_instalado": HAS_GEMINI_SDK,
+        "gemini_modelo": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        "openai_chave_configurada": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "openai_base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        "openai_modelo": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+        "ollama_modelo": os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
+        "nota": "Este endpoint mostra configuração, não confirma quota ou conectividade do provedor."
+    }
 
 
 @app.post("/api/chat-ai")
 def chat_mentor(payload: ChatPrompt):
     uid = payload.usuario_id
-    if not HAS_GEMINI_SDK:
-        return {"resposta": "Chave Gemini não configurada.", "acao_executada": False}
-
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -640,54 +727,30 @@ def chat_mentor(payload: ChatPrompt):
                 cat = t["categoria"] or "Outros"
                 resumo_categorias[cat] = resumo_categorias.get(cat, 0) + float(t["valor"] or 0)
         resumo_txt = ", ".join(f"{k}: R$ {v:.2f}" for k, v in sorted(resumo_categorias.items(), key=lambda x:x[1], reverse=True))
-        conteudo_prompt = [f"Saldo registrado: R$ {saldo:.2f}. Entradas totais registradas: R$ {entradas:.2f}. Saídas totais registradas: R$ {saidas:.2f}. Gastos por categoria: {resumo_txt or 'sem dados'}. Pedido do usuário: {payload.pergunta}"]
-        
+        user_prompt = (f"Saldo registrado: R$ {saldo:.2f}. Entradas totais registradas: R$ {entradas:.2f}. "
+            f"Saídas totais registradas: R$ {saidas:.2f}. Gastos por categoria: {resumo_txt or 'sem dados'}. "
+            f"Data atual no fuso de São Paulo: {datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()}. "
+            f"Para lançamentos sem data explícita, use a data atual; não use datas antigas como 2023. "
+            f"Pedido do usuário: {payload.pergunta}")
+
+        # Anexos visuais usam Gemini, se disponível. Sem Gemini, explica o limite sem fingir que leu o arquivo.
         if payload.ficheiro_base64:
             header, encoded = payload.ficheiro_base64.split(",", 1)
             import base64
             file_bytes = base64.b64decode(encoded)
             mime = payload.mime_type or "image/jpeg"
-            if "pdf" in mime:
-                conteudo_prompt.insert(0, types.Part.from_bytes(data=file_bytes, mime_type="application/pdf"))
-            else:
-                conteudo_prompt.insert(0, Image.open(io.BytesIO(file_bytes)))
-
-        prompt_sistema = """
-        Você é o JARVIS, consultor de finanças pessoais em português do Brasil.
-        Use os dados financeiros do usuário para dar recomendações concretas e gentis:
-        identifique categorias caras, gastos recorrentes descritos, risco de saldo negativo,
-        oportunidade de economizar e próximos passos. Nunca invente transações nem diga que
-        uma conta bancária está conectada se isso não foi informado. Ao detectar uma frase
-        clara como “gastei 45 reais no mercado” ou “recebi 2000 de salário”, registre uma
-        transação. Se faltar valor/tipo/data, faça uma pergunta e não registre.
-        Retorne APENAS um JSON estrito:
-        {
-          "resposta_texto": "...",
-          "acao": "adicionar_transacao" | "definir_orcamento" | "nenhuma",
-          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"},
-          "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}
-        }
-        """
-        conteudo_prompt.insert(0, prompt_sistema)
-        conteudo_prompt.insert(1, f"Data atual no fuso de São Paulo: {datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()}. Para lançamentos sem data explícita, use essa data; não use datas antigas como 2023.")
-
-        # Tenta modelos atuais em sequência; erros ficam nos logs do Render sem expor a chave.
-        response = None
-        erros_modelo = []
-        for modelo in (os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "gemini-2.0-flash"):
-            try:
-                response = client.models.generate_content(model=modelo, contents=conteudo_prompt)
-                if response and getattr(response, "text", None):
-                    break
-                erros_modelo.append(f"{modelo}: resposta vazia")
-                response = None
-            except Exception as erro_modelo:
-                erros_modelo.append(f"{modelo}: {type(erro_modelo).__name__}: {erro_modelo}")
-        if response is None or not getattr(response, "text", None):
-            raise RuntimeError("Nenhum modelo Gemini respondeu. " + " | ".join(erros_modelo))
-        texto_limpo = response.text.strip()
-        if texto_limpo.startswith("```"):
-            texto_limpo = texto_limpo.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+            if not os.getenv("GEMINI_API_KEY", "").strip() or not HAS_GEMINI_SDK:
+                return {"resposta": "Para analisar fotos/PDF anexados, configure GEMINI_API_KEY. Para mensagens de texto, o sistema pode usar os outros provedores configurados.", "acao_executada": False}
+            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            part = types.Part.from_bytes(data=file_bytes, mime_type=mime) if "pdf" in mime else Image.open(io.BytesIO(file_bytes))
+            response = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), contents=[prompt_sistema, part, user_prompt])
+            texto_limpo = getattr(response, "text", "") or ""
+        else:
+            texto_limpo, modelo_usado = _generate_text_with_provider(prompt_sistema, user_prompt)
+        texto_limpo = _extract_response_text(texto_limpo)
+        if not texto_limpo:
+            raise ValueError("A IA não retornou conteúdo")
+        # Alguns modelos acrescentam texto antes/depois do JSON; extrai o objeto.
         # Alguns modelos acrescentam texto antes/depois do JSON; extrai o objeto.
         inicio_json, fim_json = texto_limpo.find("{"), texto_limpo.rfind("}")
         if inicio_json < 0 or fim_json <= inicio_json:

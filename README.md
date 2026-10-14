@@ -7,6 +7,8 @@
 - Removidas credenciais de demonstração pré-preenchidas e a senha mestra padrão insegura.
 - Nova área de recomendações financeiras: alerta quando as saídas consomem grande parte da renda, destaca a categoria de maior gasto e aponta saldo negativo.
 - IA recebe resumo de entradas, saídas e gastos por categoria para gerar respostas mais úteis.
+- Camada de provedores de IA: tenta Gemini, APIs compatíveis com OpenAI e Ollama conforme a ordem configurada, seguindo para o próximo provedor se o anterior falhar.
+- Endpoint `/api/health/ia` mostra quais provedores e modelos estão configurados.
 - Validação básica para não registrar transações com valor zero/negativo ou tipo inválido.
 - Mensagens de erro da IA não revelam detalhes internos do servidor.
 - Escape de conteúdo em alguns pontos da interface para reduzir risco de injeção de HTML.
@@ -16,7 +18,34 @@
 1. Substitua os arquivos do serviço pelos arquivos deste ZIP e faça deploy.
 2. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`: sua chave da API Gemini, se quiser usar o chat IA e scanner.
-   - `GEMINI_MODEL`: opcional; padrão `gemini-2.5-flash`, com tentativa automática de `gemini-2.0-flash` se falhar.
+   - `AI_PROVIDERS`: ordem de tentativa, separada por vírgulas. Padrão: `gemini,openai,ollama`. Valores aceitos: `gemini`, `openai`, `openai_compatible`, `openrouter`, `lmstudio`, `ollama`.
+   - `GEMINI_MODEL`: opcional; padrão `gemini-2.5-flash`.
+   - `GEMINI_FALLBACK_MODEL`: opcional; padrão `gemini-2.0-flash`.
+   - `OPENAI_API_KEY`: chave para OpenAI ou para um provedor compatível que exija autenticação.
+   - `OPENAI_BASE_URL`: opcional; padrão `https://api.openai.com/v1`. Para outro provedor, informe a URL base compatível com a API Chat Completions, terminando normalmente em `/v1`.
+   - `OPENAI_MODEL`: nome exato do modelo no provedor; padrão `gpt-4o-mini`.
+   - `OLLAMA_BASE_URL`: endereço HTTP do Ollama acessível pelo backend; padrão `http://127.0.0.1:11434`.
+   - `OLLAMA_MODEL`: modelo já baixado no Ollama; padrão `llama3.2:3b`.
+
+### Como configurar múltiplos modelos
+
+Exemplo usando Gemini como primeira opção, um provedor compatível com OpenAI como segunda e Ollama como terceira:
+
+```env
+AI_PROVIDERS=gemini,openai,ollama
+GEMINI_API_KEY=sua_chave_gemini
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODEL=gemini-2.0-flash
+OPENAI_API_KEY=sua_chave_do_provedor
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+OLLAMA_BASE_URL=http://IP-DO-SERVIDOR-OLLAMA:11434
+OLLAMA_MODEL=llama3.2:3b
+```
+
+O backend tenta os provedores na ordem definida e passa ao seguinte quando falta configuração ou há falha. Não precisa configurar todos: deixe em `AI_PROVIDERS` apenas os que realmente pretende usar.
+
+**Modelos locais:** Ollama e LM Studio podem executar modelos localmente. Porém, se o backend estiver hospedado no Render, `127.0.0.1` aponta para o próprio container do Render, não para seu computador. Para usar um modelo no seu PC, o backend precisa rodar nesse PC ou o serviço hospedado precisa alcançar um endpoint remoto seguro. Não exponha o Ollama diretamente à internet sem autenticação, firewall ou túnel privado. O scanner de imagens/PDF ainda usa Gemini; os outros provedores são usados pelo chat de texto.
 4. Para verificar a configuração da IA, abra `https://SEU-SERVICO.onrender.com/api/health/ia`. Isso confirma se a variável foi carregada e se o SDK está instalado; não garante que a chave tenha quota/permissão.
 5. O chat e o scanner agora registram o motivo técnico nos logs do Render. Se continuar falhando, abra **Logs** no Render no momento do teste.
    - `CAKTO_WEBHOOK_SECRET`: segredo forte aleatório. Use o mesmo segredo no webhook, por header `X-Webhook-Secret` ou parâmetro `?secret=...`, se a configuração da Cakto permitir.
