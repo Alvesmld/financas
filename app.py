@@ -6,7 +6,8 @@ import sqlite3
 import hashlib
 import secrets
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -384,16 +385,33 @@ async def scanner_contas_foto(
         else:
             part_file = Image.open(io.BytesIO(conteudo_ficheiro))
 
-        prompt_vision = """
-        Analise este documento ou imagem. Retorne APENAS um JSON estrito:
+        hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+        prompt_vision = f"""
+        Analise este documento ou imagem. Data atual: {hoje_br.isoformat()}.
+        Extraia o mês e ano que aparecem no documento (competência/fatura) em mes_ano_detectado, por exemplo Outubro/2026. Não invente 2023 se o documento não mostrar esse ano. Em data_vencimento, use a data de vencimento impressa; se não houver, use {hoje_br.isoformat()} e sinalize isso na descrição.
+        Retorne APENAS um JSON estrito:
         {
           "mes_ano_detectado": "Outubro/2026",
           "contas": [{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
         }
         """
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=[part_file, prompt_vision])
-        texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
-        dados_ia = json.loads(texto_limpo)
+        response = None
+        falhas = []
+        for modelo in (os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "gemini-2.0-flash"):
+            try:
+                response = client.models.generate_content(model=modelo, contents=[part_file, prompt_vision])
+                if response and getattr(response, "text", None):
+                    break
+                response = None
+            except Exception as exc:
+                falhas.append(f"{modelo}: {type(exc).__name__}: {exc}")
+        if response is None or not getattr(response, "text", None):
+            raise RuntimeError("Nenhum modelo Gemini respondeu: " + " | ".join(falhas))
+        texto_limpo = response.text.strip().replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+        ini, fim = texto_limpo.find("{"), texto_limpo.rfind("}")
+        if ini < 0 or fim <= ini:
+            raise ValueError("A IA não retornou JSON válido para o documento")
+        dados_ia = json.loads(texto_limpo[ini:fim+1])
         
         total = 0
         with sqlite3.connect(DB_PATH) as conn:
@@ -577,6 +595,29 @@ def gerar_insights(usuario_id: int = Query(...)):
     return {"saldo": round(saldo,2), "entradas": round(entradas,2), "saidas": round(total_saidas,2), "insights": insights[:5]}
 
 
+def _data_transacao_ia(dados: dict, pergunta: str) -> str:
+    """Usa a data de São Paulo; só aceita ano antigo quando o usuário o especifica."""
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    texto = (pergunta or "").lower()
+    if "anteontem" in texto:
+        return (hoje - timedelta(days=2)).isoformat()
+    if "ontem" in texto:
+        return (hoje - timedelta(days=1)).isoformat()
+    # Sem ano explícito, não confiar na data alucinada pelo modelo (ex.: 2023).
+    if not __import__("re").search(r"\b20\d{2}\b", texto):
+        return hoje.isoformat()
+    valor = str(dados.get("data") or "").strip()
+    try:
+        return date.fromisoformat(valor[:10]).isoformat()
+    except (ValueError, TypeError):
+        return hoje.isoformat()
+
+
+@app.get("/api/health/ia")
+def status_ia():
+    return {"chave_configurada": bool(os.getenv("GEMINI_API_KEY", "").strip()), "sdk_instalado": HAS_GEMINI_SDK, "modelo": os.getenv("GEMINI_MODEL", "gemini-2.5-flash")}
+
+
 @app.post("/api/chat-ai")
 def chat_mentor(payload: ChatPrompt):
     uid = payload.usuario_id
@@ -628,10 +669,30 @@ def chat_mentor(payload: ChatPrompt):
         }
         """
         conteudo_prompt.insert(0, prompt_sistema)
+        conteudo_prompt.insert(1, f"Data atual no fuso de São Paulo: {datetime.now(ZoneInfo('America/Sao_Paulo')).date().isoformat()}. Para lançamentos sem data explícita, use essa data; não use datas antigas como 2023.")
 
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=conteudo_prompt)
-        texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
-        resultado = json.loads(texto_limpo)
+        # Tenta modelos atuais em sequência; erros ficam nos logs do Render sem expor a chave.
+        response = None
+        erros_modelo = []
+        for modelo in (os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "gemini-2.0-flash"):
+            try:
+                response = client.models.generate_content(model=modelo, contents=conteudo_prompt)
+                if response and getattr(response, "text", None):
+                    break
+                erros_modelo.append(f"{modelo}: resposta vazia")
+                response = None
+            except Exception as erro_modelo:
+                erros_modelo.append(f"{modelo}: {type(erro_modelo).__name__}: {erro_modelo}")
+        if response is None or not getattr(response, "text", None):
+            raise RuntimeError("Nenhum modelo Gemini respondeu. " + " | ".join(erros_modelo))
+        texto_limpo = response.text.strip()
+        if texto_limpo.startswith("```"):
+            texto_limpo = texto_limpo.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+        # Alguns modelos acrescentam texto antes/depois do JSON; extrai o objeto.
+        inicio_json, fim_json = texto_limpo.find("{"), texto_limpo.rfind("}")
+        if inicio_json < 0 or fim_json <= inicio_json:
+            raise ValueError("Resposta Gemini não contém JSON válido")
+        resultado = json.loads(texto_limpo[inicio_json:fim_json + 1])
 
         acao_executada = False
         resposta_final = resultado.get("resposta_texto", "Processado.")
@@ -648,7 +709,7 @@ def chat_mentor(payload: ChatPrompt):
                 cursor.execute("""
                     INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (uid, str(d.get("descricao", "Item"))[:180], valor_transacao, tipo_transacao, str(d.get("categoria", "Outros"))[:80], d.get("data", str(date.today()))))
+                """, (uid, str(d.get("descricao", "Item"))[:180], valor_transacao, tipo_transacao, str(d.get("categoria", "Outros"))[:80], _data_transacao_ia(d, payload.pergunta)))
                 conn.commit()
             acao_executada = True
         elif acao == "definir_orcamento":
@@ -666,8 +727,10 @@ def chat_mentor(payload: ChatPrompt):
             acao_executada = True
 
         return {"resposta": resposta_final, "acao_executada": acao_executada}
-    except Exception:
-        return {"resposta": "Não consegui processar agora. Confira se GEMINI_API_KEY está configurada no Render e tente novamente.", "acao_executada": False}
+    except Exception as erro:
+        import logging
+        logging.exception("Falha no endpoint /api/chat-ai: %s", erro)
+        return {"resposta": "A IA não conseguiu concluir agora. A chave pode estar configurada, mas o Render pode estar com modelo indisponível, limite de uso, chave sem permissão ou resposta inválida. Confira os logs do serviço no Render; tente novamente em instantes.", "acao_executada": False}
 
 if __name__ == "__main__":
     import uvicorn

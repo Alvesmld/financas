@@ -16,13 +16,16 @@
 1. Substitua os arquivos do serviço pelos arquivos deste ZIP e faça deploy.
 2. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`: sua chave da API Gemini, se quiser usar o chat IA e scanner.
+   - `GEMINI_MODEL`: opcional; padrão `gemini-2.5-flash`, com tentativa automática de `gemini-2.0-flash` se falhar.
+4. Para verificar a configuração da IA, abra `https://SEU-SERVICO.onrender.com/api/health/ia`. Isso confirma se a variável foi carregada e se o SDK está instalado; não garante que a chave tenha quota/permissão.
+5. O chat e o scanner agora registram o motivo técnico nos logs do Render. Se continuar falhando, abra **Logs** no Render no momento do teste.
    - `CAKTO_WEBHOOK_SECRET`: segredo forte aleatório. Use o mesmo segredo no webhook, por header `X-Webhook-Secret` ou parâmetro `?secret=...`, se a configuração da Cakto permitir.
    - `CORS_ORIGINS`: origens exatas do frontend, separadas por vírgula, apenas se frontend e backend estiverem em domínios diferentes. Ex.: `https://seu-site.vercel.app`.
    - `DATABASE_PATH`: caminho do arquivo SQLite, opcional.
    - `SENHA_FAMILIAR_MESTRA`: opcional; deixe ausente se não usa acesso administrativo compartilhado.
 3. No Render, configure o webhook da Cakto para `https://SEU-SERVICO.onrender.com/api/webhook/cakto` (ou adicione `?secret=SEU_SEGREDO` se for usar segredo por URL).
-4. Faça uma compra de teste e confira os logs do Render. O webhook precisa receber o e-mail do comprador e um status/evento equivalente a `approved`, `paid`, `order.paid`, `payment.approved`, `purchase_approved` ou `completed`.
-5. Depois da compra, o comprador abre o site, escolhe **Ativar Licença Cakto**, deixa a chave vazia e usa exatamente o e-mail que informou na compra. Cria uma senha com pelo menos 8 caracteres e depois faz login.
+6. Faça uma compra de teste e confira os logs do Render. O webhook precisa receber o e-mail do comprador e um status/evento equivalente a `approved`, `paid`, `order.paid`, `payment.approved`, `purchase_approved` ou `completed`.
+7. Depois da compra, o comprador abre o site, escolhe **Ativar Licença Cakto**, deixa a chave vazia e usa exatamente o e-mail que informou na compra. Cria uma senha com pelo menos 8 caracteres e depois faz login.
 
 ## Muito importante sobre o webhook da Cakto
 Os nomes exatos dos campos variam conforme o evento configurado na Cakto. Esta versão reconhece campos comuns, mas o primeiro teste real é obrigatório. Se o payload enviado pela sua Cakto tiver outros nomes/caminhos, o endpoint responderá que não encontrou o e-mail. Compare o payload/documentação do evento e ajuste os campos no início da função `webhook_cakto`.

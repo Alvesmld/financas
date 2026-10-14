@@ -258,6 +258,12 @@
     <!-- EXTRATO -->
     <section class="painel-box">
       <h2 class="titulo-painel"><span><i class="fa-solid fa-list-check"></i> Extrato Completo</span></h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;">
+        <label for="filtro-mes-extrato" style="font-weight:700;font-size:.85rem;">Mês do extrato</label>
+        <input type="month" id="filtro-mes-extrato" style="background:var(--input-bg);color:var(--text-main);border:1px solid var(--border-color);border-radius:8px;padding:8px;" />
+        <button type="button" class="btn-analisar" style="width:auto" onclick="document.getElementById('filtro-mes-extrato').value='';renderizarTabelaExtrato();">Todos os meses</button>
+        <span id="legenda-mes-extrato" style="color:var(--text-muted);font-size:.8rem;"></span>
+      </div>
       <div class="tabela-responsive">
         <table>
           <thead><tr><th>Descrição</th><th>Categoria</th><th>Data</th><th>Valor</th><th>Ações</th></tr></thead>
@@ -414,7 +420,23 @@
     }
 
     function formatarMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-    function formatarDataBR(d) { if (!d) return ''; const [y, m, day] = d.split('-'); return `${day}/${m}/${y}`; }
+    function dataHojeLocal() {
+      const agora = new Date();
+      return `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,'0')}-${String(agora.getDate()).padStart(2,'0')}`;
+    }
+    function formatarDataBR(d) {
+      if (!d) return '';
+      const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : escaparHTML(d);
+    }
+    function inicializarFiltroMesExtrato() {
+      const filtro = document.getElementById('filtro-mes-extrato');
+      if (filtro && !filtro.value) filtro.value = dataHojeLocal().slice(0,7);
+      if (filtro && !filtro.dataset.escuta) {
+        filtro.addEventListener('change', renderizarTabelaExtrato);
+        filtro.dataset.escuta = '1';
+      }
+    }
 
     function atualizarTotaisGerais() {
       const entradas = transacoesGerais.filter(t => t.tipo === 'entrada').reduce((a, b) => a + Number(b.valor), 0);
@@ -461,11 +483,16 @@
 
     function renderizarTabelaExtrato() {
       const corpo = document.getElementById('corpo-tabela-extrato');
-      if (!transacoesGerais.length) {
-        corpo.innerHTML = `<tr><td colspan="5" style="text-align:center;">Nenhum lançamento.</td></tr>`;
+      inicializarFiltroMesExtrato();
+      const mes = document.getElementById('filtro-mes-extrato')?.value || '';
+      const filtradas = transacoesGerais.filter(t => !mes || String(t.data || '').slice(0,7) === mes);
+      const legenda = document.getElementById('legenda-mes-extrato');
+      if (legenda) legenda.textContent = mes ? `Exibindo ${filtradas.length} lançamento(s) de ${mes.split('-').reverse().join('/')}` : `Exibindo todos os meses (${filtradas.length})`;
+      if (!filtradas.length) {
+        corpo.innerHTML = `<tr><td colspan="5" style="text-align:center;">Nenhum lançamento neste mês.</td></tr>`;
         return;
       }
-      corpo.innerHTML = transacoesGerais.map(t => `
+      corpo.innerHTML = filtradas.map(t => `
         <tr><td><strong>${escaparHTML(t.descricao)}</strong></td><td>${escaparHTML(t.categoria)}</td><td>${formatarDataBR(t.data)}</td><td style="color:${t.tipo==='entrada'?'var(--success)':'var(--danger)'};">${t.tipo==='entrada'?'+':'-'} ${formatarMoeda(Number(t.valor))}</td><td><button class="btn-excluir" onclick="deletarTransacao(${t.id})"><i class="fa-solid fa-trash"></i></button></td></tr>
       `).join('');
     }
