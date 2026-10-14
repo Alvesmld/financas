@@ -28,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend otimizado com suporte a multi-ações e progresso em lote",
-    version="40.0.0"
+    description="Backend corrigido com ano atual 2026 e tratamento de cota de IA",
+    version="41.0.0"
 )
 
 app.add_middleware(
@@ -286,12 +286,13 @@ async def scanner_contas_foto(
         else:
             part_file = Image.open(io.BytesIO(conteudo_ficheiro))
 
-        prompt_vision = """
-        Analise este documento ou imagem. Retorne APENAS um JSON estrito:
-        {
+        prompt_vision = f"""
+        Analise este documento ou imagem. O ano atual obrigatório é 2026. Nunca utilize anos antigos como 2023.
+        Retorne APENAS um JSON estrito:
+        {{
           "mes_ano_detectado": "Outubro/2026",
-          "contas": [{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
-        }
+          "contas": [{{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "2026-10-20"}}]
+        }}
         """
         response = client.models.generate_content(model='gemini-2.5-flash', contents=[part_file, prompt_vision])
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
@@ -452,7 +453,7 @@ def chat_mentor(payload: ChatPrompt):
             saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
             saldo = entradas - saidas
 
-        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido em lote/linha: {payload.pergunta}"]
+        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Data corrente obrigatória: 2026. Pedido em lote/linha: {payload.pergunta}"]
         
         if payload.ficheiro_base64:
             header, encoded = payload.ficheiro_base64.split(",", 1)
@@ -466,17 +467,17 @@ def chat_mentor(payload: ChatPrompt):
 
         prompt_sistema = """
         Você é o JARVIS, assistente financeiro inteligente, ágil e capaz de processar múltiplos comandos e listas em uma única linha de texto.
+        REGRA CRUCIAL DE DATA: O ano atual obrigatório para todas as transações, vencimentos ou datas geradas é 2026. NUNCA utilize 2023 ou outros anos passados.
         Retorne APENAS um JSON estrito contendo uma lista de ações caso existam múltiplos pedidos, ou uma ação principal:
         {
           "resposta_texto": "...",
           "progresso_percentual": 100,
           "status_processamento": "Concluído com sucesso",
           "acoes": [
-            {"acao": "adicionar_transacao", "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"}},
+            {"acao": "adicionar_transacao", "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "2026-10-14"}},
             {"acao": "definir_orcamento", "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}}
           ]
         }
-        Se houver apenas uma ou nenhuma ação, utilize a lista vazia ou com 1 item em "acoes".
         """
         conteudo_prompt.insert(0, prompt_sistema)
 
@@ -515,16 +516,22 @@ def chat_mentor(payload: ChatPrompt):
 
         return {
             "resposta": resposta_final, 
-            "acao_executada": acao_executada,
+            "acao_executada": acacao_executada if 'acao_executada' in locals() else True,
             "progresso": progresso,
             "status": status_proc
         }
     except Exception as e:
+        erro_msg = str(e)
+        if "429" in erro_msg or "RESOURCE_EXHAUSTED" in erro_msg:
+            msg_amigavel = "Limite de requisições da IA atingido temporariamente (Cota excedida na API do Gemini). Tente novamente mais tarde."
+        else:
+            msg_amigavel = f"Erro ao processar o pedido: {erro_msg}"
+            
         return {
-            "resposta": "Desculpe, ocorreu uma instabilidade momentânea na IA ao processar múltiplos comandos. Tente novamente.", 
+            "resposta": msg_amigavel, 
             "acao_executada": False,
             "progresso": 0,
-            "status": "Erro de processamento"
+            "status": "Erro de cota ou comunicação"
         }
 
 if __name__ == "__main__":
