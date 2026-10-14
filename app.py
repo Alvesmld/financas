@@ -26,7 +26,7 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine Photo Support",
+    title="Finanças Domésticas AI Engine",
     description="Backend completo com suporte a imagens e rotas estáticas",
     version="18.0.0"
 )
