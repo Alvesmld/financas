@@ -20,14 +20,15 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 try:
     from google import genai
+    from google.genai import types
     HAS_GEMINI_SDK = True if GEMINI_API_KEY else False
 except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine Support & Voice",
-    description="Backend com persistência segura de utilizadores e suporte de voz/foto",
-    version="25.0.0"
+    title="Finanças Domésticas AI Master Engine",
+    description="Backend completo com persistência total, PDF, Voz, Orçamentos e Histórico",
+    version="27.0.0"
 )
 
 app.add_middleware(
@@ -110,6 +111,16 @@ def init_db():
                 FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
             )
         """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS orcamentos_categoria (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                categoria TEXT NOT NULL,
+                limite_mensal REAL NOT NULL,
+                FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+            )
+        """)
         
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         if cursor.fetchone()[0] == 0:
@@ -187,6 +198,15 @@ class MetaEconomiaSchema(BaseModel):
 class AtualizarMetaSchema(BaseModel):
     titulo: Optional[str] = None
 
+class DepositoMetaSchema(BaseModel):
+    valor: float
+
+class OrcamentoSchema(BaseModel):
+    id: Optional[int] = None
+    usuario_id: int
+    categoria: str
+    limite_mensal: float
+
 class DesejoSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -198,13 +218,11 @@ class DesejoSchema(BaseModel):
 class AtualizarDesejoSchema(BaseModel):
     titulo: Optional[str] = None
 
-class DepositoMetaSchema(BaseModel):
-    valor: float
-
 class ChatPrompt(BaseModel):
     usuario_id: int
     pergunta: str
-    imagem_base64: Optional[str] = None
+    ficheiro_base64: Optional[str] = None
+    mime_type: Optional[str] = None
 
 @app.post("/api/cadastrar")
 def cadastrar_usuario(usuario: UsuarioCadastro):
@@ -241,14 +259,20 @@ async def scanner_contas_foto(
         raise HTTPException(status_code=400, detail="SDK Gemini não configurado.")
 
     try:
-        conteudo_imagem = await foto.read()
-        imagem = Image.open(io.BytesIO(conteudo_imagem))
+        conteudo_ficheiro = await foto.read()
+        mime = foto.content_type or "image/jpeg"
 
         client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        if "pdf" in mime:
+            part_file = types.Part.from_bytes(data=conteudo_ficheiro, mime_type="application/pdf")
+        else:
+            part_file = Image.open(io.BytesIO(conteudo_ficheiro))
+
         prompt_vision = """
-        Analise esta imagem que contém várias contas listadas em fileiras.
-        1. Identifique o MÊS e o ANO impressos ou escritos na folha.
-        2. Para cada conta detetada, extraia: descricao, valor (float), categoria (entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros']), status ('paga' se tiver PG riscado, senão 'pendente'), data_vencimento (YYYY-MM-DD sincronizada).
+        Analise este documento ou imagem (fatura de energia, internet, extrato ou lista de contas).
+        1. Identifique o MÊS e o ANO de referência.
+        2. Extraia cada conta encontrada: descricao, valor (float), categoria (entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros']), status ('paga' ou 'pendente'), data_vencimento (YYYY-MM-DD).
         Retorne APENAS um JSON estrito:
         {
           "mes_ano_detectado": "Outubro/2026",
@@ -258,7 +282,7 @@ async def scanner_contas_foto(
 
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[imagem, prompt_vision]
+            contents=[part_file, prompt_vision]
         )
 
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
@@ -455,6 +479,46 @@ def deletar_meta(meta_id: int, usuario_id: int = Query(...)):
         conn.commit()
         return {"sucesso": True}
 
+@app.get("/api/orcamentos")
+def listar_orcamentos(usuario_id: int = Query(...)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        orcamentos = cursor.execute("SELECT * FROM orcamentos_categoria WHERE usuario_id = ?", (usuario_id,)).fetchall()
+        transacoes = cursor.execute("SELECT * FROM transacoes WHERE usuario_id = ? AND tipo = 'saida'", (usuario_id,)).fetchall()
+        
+        resultado = []
+        for o in orcamentos:
+            gasto_atual = sum(t["valor"] for t in transacoes if t["categoria"] == o["categoria"])
+            resultado.append({
+                "id": o["id"],
+                "categoria": o["categoria"],
+                "limite_mensal": o["limite_mensal"],
+                "gasto_atual": round(gasto_atual, 2),
+                "estourado": gasto_atual > o["limite_mensal"]
+            })
+        return resultado
+
+@app.post("/api/orcamentos")
+def definir_orcamento(orcamento: OrcamentoSchema):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (orcamento.usuario_id, orcamento.categoria)).fetchone()
+        if existente:
+            cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (orcamento.limite_mensal, existente[0]))
+        else:
+            cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (orcamento.usuario_id, orcamento.categoria, orcamento.limite_mensal))
+        conn.commit()
+        return {"sucesso": True}
+
+@app.delete("/api/orcamentos/{orc_id}")
+def deletar_orcamento(orc_id: int, usuario_id: int = Query(...)):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM orcamentos_categoria WHERE id = ? AND usuario_id = ?", (orc_id, usuario_id))
+        conn.commit()
+        return {"sucesso": True}
+
 @app.get("/api/desejos", response_model=List[DesejoSchema])
 def listar_desejos(usuario_id: int = Query(...)):
     with sqlite3.connect(DB_PATH) as conn:
@@ -544,23 +608,27 @@ def chat_mentor(payload: ChatPrompt):
             saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
             saldo = entradas - saidas
 
-        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido do utilizador: {payload.pergunta}"]
+        conteudo_prompt = [f"Saldo atual: R$ {saldo:.2f}. Pedido: {payload.pergunta}"]
         
-        if payload.imagem_base64:
-            header, encoded = payload.imagem_base64.split(",", 1)
+        if payload.ficheiro_base64:
+            header, encoded = payload.ficheiro_base64.split(",", 1)
+            file_bytes = base64.b64decode(encoded) if 'base64' in globals() or __import__('base64') else None
             import base64
-            img_bytes = base64.b64decode(encoded)
-            imagem = Image.open(io.BytesIO(img_bytes))
-            conteudo_prompt.insert(0, imagem)
+            file_bytes = base64.b64decode(encoded)
+            mime = payload.mime_type or "image/jpeg"
+            if "pdf" in mime:
+                conteudo_prompt.insert(0, types.Part.from_bytes(data=file_bytes, mime_type="application/pdf"))
+            else:
+                conteudo_prompt.insert(0, Image.open(io.BytesIO(file_bytes)))
 
         prompt_sistema = """
-        Você é o JARVIS, assistente de suporte financeiro. Analise o pedido (e foto se houver).
+        Você é o JARVIS, assistente financeiro completo. Pode adicionar transações, definir tetos de orçamento ou analisar extratos e faturas (PDF/imagens).
         Retorne APENAS um JSON estrito:
         {
           "resposta_texto": "...",
-          "acao": "adicionar_transacao" | "gerar_planilha_data" | "nenhuma",
+          "acao": "adicionar_transacao" | "definir_orcamento" | "nenhuma",
           "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida", "categoria": "Outros", "data": "YYYY-MM-DD"},
-          "filtro_data_inicio": "YYYY-MM-DD"
+          "dados_orcamento": {"categoria": "...", "limite_mensal": 0.0}
         }
         """
         conteudo_prompt.insert(0, prompt_sistema)
@@ -585,6 +653,20 @@ def chat_mentor(payload: ChatPrompt):
                     INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (uid, d.get("descricao", "Item"), float(d.get("valor", 0.0)), d.get("tipo", "saida"), d.get("categoria", "Outros"), d.get("data", str(date.today()))))
+                conn.commit()
+            acao_executada = True
+
+        elif acao == "definir_orcamento":
+            o = resultado.get("dados_orcamento", {})
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cat = o.get("categoria", "Outros")
+                lim = float(o.get("limite_mensal", 0.0))
+                existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (uid, cat)).fetchone()
+                if existente:
+                    cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (lim, existente[0]))
+                else:
+                    cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (uid, cat, lim))
                 conn.commit()
             acao_executada = True
 
