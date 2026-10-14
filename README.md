@@ -84,3 +84,22 @@ Isso acontece porque o disco normal do serviço web do Render é efêmero. O SQL
 ## Diagnóstico da IA
 
 Abra `https://SEU-SERVICO.onrender.com/api/health/ia` para ver os provedores configurados e o endpoint `/api/health/storage` para conferir o banco. Se o Gemini mostrar limite de requisições esgotado, o código não consegue remover esse limite: configure um segundo provedor com credenciais e modelo válidos em `AI_PROVIDERS`, por exemplo `gemini,openai`. Ollama só funciona no Render se o endpoint estiver acessível de forma segura a partir do backend; `127.0.0.1` aponta para o próprio container do Render.
+
+
+## Segurança da versão 35
+
+- Em `ENVIRONMENT=production` (padrão), `/docs`, `/redoc` e `/openapi.json` ficam desativados. Para desenvolvimento, use `ENVIRONMENT=development`; evite reativar documentação pública em produção.
+- Todas as rotas de dados financeiros exigem `Authorization: Bearer <sessao_token>`. O backend determina o usuário pelo token, não pelo `usuario_id` enviado no navegador.
+- O frontend atualizado envia o token automaticamente nas chamadas privadas. Após o deploy, faça logout/login se uma sessão antiga não funcionar.
+- O endpoint de webhook da Cakto permanece público e deve ser protegido com `CAKTO_WEBHOOK_SECRET` e o mecanismo de assinatura/segredo suportado pela configuração da Cakto. Confirme o formato real do webhook antes de produção.
+- Configure o Persistent Disk do Render em `/var/data` e `DATABASE_PATH=/var/data/financas.db`. Um deploy não migra automaticamente o banco antigo para o disco; faça backup e copie o arquivo anterior uma única vez, se necessário, antes de usar o novo caminho.
+- A rota de saúde `/api/health/storage` revela apenas status básico do armazenamento, sem o caminho completo por padrão.
+
+## Checklist de teste após deploy
+
+1. `/docs` deve retornar 404 em produção.
+2. `GET /api/transacoes` sem `Authorization` deve retornar 401.
+3. Faça login e confirme que o frontend carrega transações.
+4. Tente usar o token de um usuário para alterar outro usuário: a API deve continuar operando somente sobre o dono do token.
+5. Crie um lançamento, faça novo deploy e confirme que o lançamento continua lá.
+6. Teste ativação Cakto com um pedido de teste e verifique os logs.

@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -107,10 +107,15 @@ try:
 except ImportError:
     HAS_GEMINI_SDK = False
 
+_production = os.getenv("ENVIRONMENT", "production").strip().lower() == "production"
+_docs_enabled = os.getenv("ENABLE_API_DOCS", "false").strip().lower() == "true"
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
     description="Backend completo com todas as funcionalidades, IA, Licenciamento Cakto e Anti-Sharing",
-    version="34.0.0"
+    version="35.0.0",
+    docs_url="/docs" if (not _production or _docs_enabled) else None,
+    redoc_url="/redoc" if (not _production or _docs_enabled) else None,
+    openapi_url="/openapi.json" if (not _production or _docs_enabled) else None,
 )
 
 app.add_middleware(
@@ -241,16 +246,25 @@ def init_db():
         # Migração segura para instalações existentes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_compras_email ON compras_cakto(email)")
 
-        cursor.execute("SELECT COUNT(*) FROM usuarios WHERE email = 'demo@financas.com'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("""
-                INSERT INTO usuarios (nome, email, senha_hash)
-                VALUES ('Usuário Convidado', 'demo@financas.com', ?)
-            """, (hashlib.sha256('123456'.encode()).hexdigest(),))
-            
         conn.commit()
 
 init_db()
+
+def get_current_user(request: Request) -> dict:
+    """Autentica rotas privadas com Bearer token e devolve a identidade do banco."""
+    auth = request.headers.get("Authorization", "")
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail="Sessão ausente. Entre novamente.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        user = conn.execute(
+            "SELECT id, nome, email, sessao_token FROM usuarios WHERE sessao_token = ?",
+            (token.strip(),)
+        ).fetchone()
+    if not user or not user["sessao_token"] or not secrets.compare_digest(user["sessao_token"], token.strip()):
+        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada. Entre novamente.")
+    return {"id": int(user["id"]), "nome": user["nome"], "email": user["email"]}
 
 def hash_senha(senha: str) -> str:
     return hashlib.sha256(senha.encode()).hexdigest()
@@ -328,14 +342,8 @@ def login_usuario(credenciais: UsuarioLogin):
         }
 
 @app.post("/api/verificar-sessao")
-def verificar_sessao(usuario_id: int = Query(...), token: str = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        u = cursor.execute("SELECT sessao_token FROM usuarios WHERE id = ?", (usuario_id,)).fetchone()
-        if not u or u["sessao_token"] != token:
-            raise HTTPException(status_code=401, detail="Sessão encerrada por outro acesso simultâneo.")
-        return {"valido": True}
+def verificar_sessao(current_user: dict = Depends(get_current_user)):
+    return {"valido": True, "usuario_id": current_user["id"]}
 
 @app.post("/api/ativar-licenca")
 def ativar_licenca(payload: AtivarLicencaSchema):
@@ -373,9 +381,10 @@ def ativar_licenca(payload: AtivarLicencaSchema):
             if not compra:
                 raise HTTPException(status_code=403, detail="Não encontramos uma compra aprovada para este e-mail. Use o mesmo e-mail da compra na Cakto ou informe sua chave de licença.")
 
+        token_novo = secrets.token_hex(32)
         cursor.execute(
-            "INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)",
-            (payload.nome.strip(), email_limpo, hash_senha(payload.senha))
+            "INSERT INTO usuarios (nome, email, senha_hash, sessao_token) VALUES (?, ?, ?, ?)",
+            (payload.nome.strip(), email_limpo, hash_senha(payload.senha), token_novo)
         )
         uid = cursor.lastrowid
         if lic:
@@ -383,7 +392,7 @@ def ativar_licenca(payload: AtivarLicencaSchema):
         if compra:
             cursor.execute("UPDATE compras_cakto SET ativada = 1 WHERE id = ?", (compra["id"],))
         conn.commit()
-        return {"sucesso": True, "usuario": {"id": uid, "nome": payload.nome.strip(), "email": email_limpo}}
+        return {"sucesso": True, "usuario": {"id": uid, "nome": payload.nome.strip(), "email": email_limpo}, "sessao_token": token_novo}
 
 @app.post("/api/webhook/cakto")
 async def webhook_cakto(request: Request):
@@ -461,9 +470,11 @@ async def webhook_cakto(request: Request):
 
 @app.post("/api/scanner-contas-foto")
 async def scanner_contas_foto(
-    usuario_id: int = Form(...),
-    foto: UploadFile = File(...)
+    foto: UploadFile = File(...),
+    usuario_id: Optional[int] = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
+    usuario_id = current_user["id"]
     if not HAS_GEMINI_SDK:
         raise HTTPException(status_code=400, detail="O scanner de imagens/PDF precisa de GEMINI_API_KEY configurada. Chat de texto aceita Gemini, OpenAI compatível e Ollama.")
 
@@ -521,7 +532,8 @@ async def scanner_contas_foto(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/transacoes")
-def listar_transacoes(usuario_id: int = Query(...)):
+def listar_transacoes(usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -529,19 +541,21 @@ def listar_transacoes(usuario_id: int = Query(...)):
         return [dict(r) for r in rows]
 
 @app.post("/api/transacoes")
-def criar_transacao(transacao: TransacaoSchema):
+def criar_transacao(transacao: TransacaoSchema, current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (transacao.usuario_id, transacao.descricao, transacao.valor, transacao.tipo, transacao.categoria, transacao.data))
+        """, (usuario_id, transacao.descricao, transacao.valor, transacao.tipo, transacao.categoria, transacao.data))
         conn.commit()
         transacao.id = cursor.lastrowid
         return transacao
 
 @app.delete("/api/transacoes/{transacao_id}")
-def deletar_transacao(transacao_id: int, usuario_id: int = Query(...)):
+def deletar_transacao(transacao_id: int, usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM transacoes WHERE id = ? AND usuario_id = ?", (transacao_id, usuario_id))
@@ -549,7 +563,8 @@ def deletar_transacao(transacao_id: int, usuario_id: int = Query(...)):
         return {"sucesso": True}
 
 @app.get("/api/projecao/{meses}")
-def api_projecao(meses: int, usuario_id: int = Query(...)):
+def api_projecao(meses: int, usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -566,7 +581,8 @@ def api_projecao(meses: int, usuario_id: int = Query(...)):
         return {"periodo_meses": meses, "saldo_atual": round(saldo_atual, 2), "entradas_estimadas": round(entradas * meses, 2), "saidas_estimadas": round(saidas * meses, 2), "contas_agendadas": round(total_contas, 2), "saldo_projetado_final": round(saldo_final, 2)}
 
 @app.get("/api/orcamentos")
-def listar_orcamentos(usuario_id: int = Query(...)):
+def listar_orcamentos(usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -583,19 +599,21 @@ def listar_orcamentos(usuario_id: int = Query(...)):
         return resultado
 
 @app.post("/api/orcamentos")
-def definir_orcamento(orcamento: OrcamentoSchema):
+def definir_orcamento(orcamento: OrcamentoSchema, current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (orcamento.usuario_id, orcamento.categoria)).fetchone()
+        existente = cursor.execute("SELECT id FROM orcamentos_categoria WHERE usuario_id = ? AND categoria = ?", (usuario_id, orcamento.categoria)).fetchone()
         if existente:
             cursor.execute("UPDATE orcamentos_categoria SET limite_mensal = ? WHERE id = ?", (orcamento.limite_mensal, existente[0]))
         else:
-            cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (orcamento.usuario_id, orcamento.categoria, orcamento.limite_mensal))
+            cursor.execute("INSERT INTO orcamentos_categoria (usuario_id, categoria, limite_mensal) VALUES (?, ?, ?)", (usuario_id, orcamento.categoria, orcamento.limite_mensal))
         conn.commit()
         return {"sucesso": True}
 
 @app.delete("/api/orcamentos/{orc_id}")
-def deletar_orcamento(orc_id: int, usuario_id: int = Query(...)):
+def deletar_orcamento(orc_id: int, usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM orcamentos_categoria WHERE id = ? AND usuario_id = ?", (orc_id, usuario_id))
@@ -603,7 +621,8 @@ def deletar_orcamento(orc_id: int, usuario_id: int = Query(...)):
         return {"sucesso": True}
 
 @app.get("/api/desejos", response_model=List[DesejoSchema])
-def listar_desejos(usuario_id: int = Query(...)):
+def listar_desejos(usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -611,19 +630,21 @@ def listar_desejos(usuario_id: int = Query(...)):
         return [dict(r) for r in rows]
 
 @app.post("/api/desejos", response_model=DesejoSchema)
-def criar_desejo(desejo: DesejoSchema):
+def criar_desejo(desejo: DesejoSchema, current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO lista_desejos (usuario_id, titulo, valor, link, status)
             VALUES (?, ?, ?, ?, 'pendente')
-        """, (desejo.usuario_id, desejo.titulo, desejo.valor, desejo.link or ""))
+        """, (usuario_id, desejo.titulo, desejo.valor, desejo.link or ""))
         conn.commit()
         desejo.id = cursor.lastrowid
         return desejo
 
 @app.post("/api/desejos/{desejo_id}/analisar")
-def api_analisar_desejo(desejo_id: int, usuario_id: int = Query(...)):
+def api_analisar_desejo(desejo_id: int, usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -637,7 +658,8 @@ def api_analisar_desejo(desejo_id: int, usuario_id: int = Query(...)):
         return {"parecer": f"Comprando '{desejo['titulo']}' (R$ {desejo['valor']:.2f}), o seu saldo passará a ser R$ {restante:.2f}."}
 
 @app.delete("/api/desejos/{desejo_id}")
-def deletar_desejo(desejo_id: int, usuario_id: int = Query(...)):
+def deletar_desejo(desejo_id: int, usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM lista_desejos WHERE id = ? AND usuario_id = ?", (desejo_id, usuario_id))
@@ -645,7 +667,8 @@ def deletar_desejo(desejo_id: int, usuario_id: int = Query(...)):
         return {"sucesso": True}
 
 @app.get("/api/insights")
-def gerar_insights(usuario_id: int = Query(...)):
+def gerar_insights(usuario_id: Optional[int] = Query(None), current_user: dict = Depends(get_current_user)):
+    usuario_id = current_user["id"]
     """Sugestões financeiras objetivas com base nas transações reais do usuário."""
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -716,7 +739,7 @@ def status_storage():
         writable = os.access(path.parent, os.W_OK)
         exists = path.exists()
         return {
-            "database_path": str(path),
+            "database_path": str(path) if os.getenv("SHOW_STORAGE_PATH", "false").lower() == "true" else ("/var/data/financas.db" if str(path).startswith("/var/data/") else "caminho personalizado/local"),
             "database_exists": exists,
             "database_size_bytes": path.stat().st_size if exists else 0,
             "directory_writable": writable,
@@ -746,8 +769,8 @@ def status_ia():
 
 
 @app.post("/api/chat-ai")
-def chat_mentor(payload: ChatPrompt):
-    uid = payload.usuario_id
+def chat_mentor(payload: ChatPrompt, current_user: dict = Depends(get_current_user)):
+    uid = current_user["id"]
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
@@ -829,7 +852,7 @@ def chat_mentor(payload: ChatPrompt):
     except Exception as erro:
         import logging
         logging.exception("Falha no endpoint /api/chat-ai: %s", erro)
-        return {"resposta": "A IA não conseguiu concluir agora. A chave pode estar configurada, mas o Render pode estar com modelo indisponível, limite de uso, chave sem permissão ou resposta inválida. Confira os logs do serviço no Render; tente novamente em instantes.", "acao_executada": False}
+        raise HTTPException(status_code=503, detail="A IA não conseguiu responder agora. Verifique a disponibilidade do provedor e os logs do backend.")
 
 if __name__ == "__main__":
     import uvicorn

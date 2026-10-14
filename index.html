@@ -275,6 +275,16 @@
 
   <script>
     const API_URL = '/api';
+
+    // Envia o token em todas as chamadas privadas sem alterar login/ativação.
+    async function apiFetch(url, options = {}) {
+      const opts = { ...options, headers: { ...(options.headers || {}) } };
+      const token = localStorage.getItem('sessao_token');
+      const publicPaths = ['/login', '/ativar-licenca', '/webhook/cakto'];
+      const isPublic = publicPaths.some(path => String(url).includes(path));
+      if (token && !isPublic) opts.headers['Authorization'] = `Bearer ${token}`;
+      return fetch(url, opts);
+    }
     let usuarioLogado = null;
     let tokenSessao = null;
     let transacoesGerais = [];
@@ -322,7 +332,7 @@
     document.getElementById('form-auth-login').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const resp = await fetch(`${API_URL}/login`, {
+        const resp = await apiFetch(`${API_URL}/login`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: document.getElementById('login-email').value, senha: document.getElementById('login-senha').value })
         });
@@ -338,7 +348,7 @@
     document.getElementById('form-auth-ativar').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const resp = await fetch(`${API_URL}/ativar-licenca`, {
+        const resp = await apiFetch(`${API_URL}/ativar-licenca`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chave: document.getElementById('lic-chave').value,
@@ -349,8 +359,14 @@
         });
         const res = await resp.json();
         if (resp.ok) {
-          mostrarToast('Licença ativada com sucesso! Faça login.', 'sucesso');
-          alternarAuthTab('login');
+          if (res.sessao_token && res.usuario) {
+            localStorage.setItem('usuario_logado', JSON.stringify(res.usuario));
+            localStorage.setItem('sessao_token', res.sessao_token);
+            location.reload();
+          } else {
+            mostrarToast('Licença ativada com sucesso! Faça login.', 'sucesso');
+            alternarAuthTab('login');
+          }
         } else { mostrarToast(res.detail || 'Erro ao ativar.', 'erro'); }
       } catch (err) { mostrarToast('Erro de conexão.', 'erro'); }
     };
@@ -374,7 +390,7 @@
     async function validarSessaoServidor() {
       if (!usuarioLogado || !tokenSessao) return;
       try {
-        const resp = await fetch(`${API_URL}/verificar-sessao?usuario_id=${usuarioLogado.id}&token=${tokenSessao}`, { method: 'POST' });
+        const resp = await apiFetch(`${API_URL}/verificar-sessao`, { method: 'POST' });
         if (!resp.ok) { fazerLogout(); }
       } catch (e) {}
     }
@@ -401,9 +417,9 @@
       const uid = usuarioLogado.id;
       try {
         const [respT, respO, respD] = await Promise.all([
-          fetch(`${API_URL}/transacoes?usuario_id=${uid}`),
-          fetch(`${API_URL}/orcamentos?usuario_id=${uid}`),
-          fetch(`${API_URL}/desejos?usuario_id=${uid}`)
+          apiFetch(`${API_URL}/transacoes?usuario_id=${uid}`),
+          apiFetch(`${API_URL}/orcamentos?usuario_id=${uid}`),
+          apiFetch(`${API_URL}/desejos?usuario_id=${uid}`)
         ]);
         transacoesGerais = await respT.json();
         orcamentosLista = await respO.json();
@@ -451,7 +467,7 @@
       const alvo = document.getElementById('lista-insights');
       if (!alvo) return;
       try {
-        const resp = await fetch(`${API_URL}/insights?usuario_id=${usuarioLogado.id}`);
+        const resp = await apiFetch(`${API_URL}/insights?usuario_id=${usuarioLogado.id}`);
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.detail || 'Não foi possível analisar.');
         const cores = { alerta: 'var(--danger)', atencao: '#f59e0b', positivo: 'var(--success)', info: 'var(--primary)' };
@@ -472,7 +488,7 @@
     async function carregarProjecao() {
       const meses = document.getElementById('input-meses-projecao').value || 3;
       try {
-        const resp = await fetch(`${API_URL}/projecao/${meses}?usuario_id=${usuarioLogado.id}`);
+        const resp = await apiFetch(`${API_URL}/projecao/${meses}?usuario_id=${usuarioLogado.id}`);
         const p = await resp.json();
         document.getElementById('resultado-projecao').innerHTML = `
           Daqui a <strong>${p.periodo_meses} meses</strong>, considerando suas médias e contas pendentes, seu saldo projetado será de <strong style="color:${p.saldo_projetado_final>=0?'var(--success)':'var(--danger)'};">${formatarMoeda(p.saldo_projetado_final)}</strong>. 
@@ -498,7 +514,7 @@
     }
 
     async function deletarTransacao(id) {
-      await fetch(`${API_URL}/transacoes/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      await apiFetch(`${API_URL}/transacoes/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
       carregarDadosGlobais();
     }
 
@@ -517,7 +533,7 @@
     }
 
     async function deletarOrcamento(id) {
-      await fetch(`${API_URL}/orcamentos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      await apiFetch(`${API_URL}/orcamentos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
       carregarDadosGlobais();
     }
 
@@ -548,13 +564,13 @@
     }
 
     async function analisarDesejo(id) {
-      const resp = await fetch(`${API_URL}/desejos/${id}/analisar?usuario_id=${usuarioLogado.id}`, { method: 'POST' });
+      const resp = await apiFetch(`${API_URL}/desejos/${id}/analisar?usuario_id=${usuarioLogado.id}`, { method: 'POST' });
       const res = await resp.json();
       document.getElementById(`parecer-desejo-${id}`).textContent = res.parecer;
     }
 
     async function deletarDesejo(id) {
-      await fetch(`${API_URL}/desejos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
+      await apiFetch(`${API_URL}/desejos/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
       carregarDadosGlobais();
     }
 
@@ -583,7 +599,7 @@
         fd.append('foto', f);
         document.getElementById('scanner-loading').style.display = 'flex';
         try {
-          const resp = await fetch(`${API_URL}/scanner-contas-foto`, { method: 'POST', body: fd });
+          const resp = await apiFetch(`${API_URL}/scanner-contas-foto`, { method: 'POST', body: fd });
           const res = await resp.json();
           document.getElementById('scanner-loading').style.display = 'none';
           if (resp.ok) { mostrarToast(`Importado com sucesso (${res.mes_ano_detectado})`, 'sucesso'); e.target.reset(); carregarDadosGlobais(); }
@@ -595,7 +611,7 @@
     function initFormularios() {
       document.getElementById('form-orcamento').onsubmit = async (e) => {
         e.preventDefault();
-        await fetch(`${API_URL}/orcamentos`, {
+        await apiFetch(`${API_URL}/orcamentos`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ usuario_id: usuarioLogado.id, categoria: document.getElementById('select-orcamento-cat').value, limite_mensal: parseFloat(document.getElementById('input-orcamento-limite').value) })
         });
@@ -604,7 +620,7 @@
 
       document.getElementById('form-desejo').onsubmit = async (e) => {
         e.preventDefault();
-        await fetch(`${API_URL}/desejos`, {
+        await apiFetch(`${API_URL}/desejos`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ usuario_id: usuarioLogado.id, titulo: document.getElementById('input-desejo-titulo').value, valor: parseFloat(document.getElementById('input-desejo-valor').value), link: document.getElementById('input-desejo-link').value })
         });
@@ -682,7 +698,7 @@
         corpoChat.scrollTop = corpoChat.scrollHeight;
 
         try {
-          const resp = await fetch(`${API_URL}/chat-ai`, {
+          const resp = await apiFetch(`${API_URL}/chat-ai`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ usuario_id: usuarioLogado.id, pergunta: texto || "Analise.", ficheiro_base64: fileB64, mime_type: mimeB64 })
           });
