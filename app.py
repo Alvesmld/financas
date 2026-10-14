@@ -25,9 +25,9 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine Vision",
-    description="Backend completo com OCR Gemini Vision para leitura de contas",
-    version="19.0.0"
+    title="Finanças Domésticas AI Engine Vision Sync",
+    description="Backend com sincronização automática de mês/ano e IA Vision",
+    version="23.0.0"
 )
 
 app.add_middleware(
@@ -125,6 +125,24 @@ init_db()
 def hash_senha(senha: str) -> str:
     return hashlib.sha256(senha.encode()).hexdigest()
 
+def buscar_transacoes_filtradas(usuario_id: int, d_inicio: str, d_fim: str, categoria: Optional[str] = None):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        if categoria:
+            rows = cursor.execute("""
+                SELECT * FROM transacoes 
+                WHERE usuario_id = ? AND data BETWEEN ? AND ? AND categoria = ?
+                ORDER BY data DESC, id DESC
+            """, (usuario_id, d_inicio, d_fim, categoria)).fetchall()
+        else:
+            rows = cursor.execute("""
+                SELECT * FROM transacoes 
+                WHERE usuario_id = ? AND data BETWEEN ? AND ?
+                ORDER BY data DESC, id DESC
+            """, (usuario_id, d_inicio, d_fim)).fetchall()
+        return [dict(r) for r in rows]
+
 class UsuarioCadastro(BaseModel):
     nome: str
     email: str
@@ -152,6 +170,12 @@ class ContaPagarSchema(BaseModel):
     categoria: str
     status: Optional[str] = "pendente"
 
+class AtualizarContaSchema(BaseModel):
+    descricao: Optional[str] = None
+
+class AtualizarStatusSchema(BaseModel):
+    status: str
+
 class MetaEconomiaSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -160,6 +184,9 @@ class MetaEconomiaSchema(BaseModel):
     valor_atual: Optional[float] = 0.0
     data_limite: Optional[str] = None
 
+class AtualizarMetaSchema(BaseModel):
+    titulo: Optional[str] = None
+
 class DesejoSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -167,6 +194,9 @@ class DesejoSchema(BaseModel):
     valor: float
     link: Optional[str] = ""
     status: Optional[str] = "pendente"
+
+class AtualizarDesejoSchema(BaseModel):
+    titulo: Optional[str] = None
 
 class DepositoMetaSchema(BaseModel):
     valor: float
@@ -216,17 +246,22 @@ async def scanner_contas_foto(
         client = genai.Client(api_key=GEMINI_API_KEY)
         
         prompt_vision = """
-        Esta imagem contém várias contas escritas em fileiras (linhas).
-        Analise a imagem e detete cada conta. Para cada conta, extraia:
-        - descricao: O nome da conta.
-        - valor: O valor numérico da conta (float).
-        - categoria: Escolha obrigatoriamente entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros'].
-        - status: 'paga' se houver a indicação "PG" riscada ou tachada ao lado da conta, ou 'pendente' caso contrário.
+        Analise esta imagem que contém várias contas listadas em fileiras (linhas).
+        1. Identifique o MÊS e o ANO impressos ou escritos na folha/caderno (ex: "Janeiro/2026", "Outubro de 2026", etc.).
+        2. Para cada conta detetada na fileira, extraia:
+           - descricao: O nome da conta ou serviço.
+           - valor: O valor numérico (float).
+           - categoria: Escolha obrigatoriamente entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros'].
+           - status: 'paga' se ao lado da conta houver a sigla "PG" visível que esteja riscada, tachada ou com um traço por cima; caso contrário, defina 'pendente'.
+           - data_vencimento: A data de vencimento formatada rigorosamente no padrão ISO "YYYY-MM-DD", sincronizando o dia da conta com o MÊS e ANO detetados na imagem. Se não houver dia específico, utilize o dia 10 do mês detetado.
 
-        Retorne APENAS um JSON estrito no formato de lista:
-        [
-          {"descricao": "...", "valor": 0.00, "categoria": "...", "status": "pendente"|"paga"}
-        ]
+        Retorne APENAS um JSON estrito com o seguinte formato, sem texto adicional:
+        {
+          "mes_ano_detectado": "Outubro/2026",
+          "contas": [
+            {"descricao": "...", "valor": 0.00, "categoria": "...", "status": "pendente"|"paga", "data_vencimento": "YYYY-MM-DD"}
+          ]
+        }
         """
 
         response = client.models.generate_content(
@@ -235,9 +270,11 @@ async def scanner_contas_foto(
         )
 
         texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
-        contas_detectadas = json.loads(texto_limpo)
+        dados_ia = json.loads(texto_limpo)
 
-        hoje_str = str(date.today())
+        mes_ano_detectado = dados_ia.get("mes_ano_detectado", "Mês Atual")
+        contas_detectadas = dados_ia.get("contas", [])
+
         total_importadas = 0
 
         with sqlite3.connect(DB_PATH) as conn:
@@ -250,14 +287,14 @@ async def scanner_contas_foto(
                     usuario_id, 
                     c.get("descricao", "Conta detetada"), 
                     float(c.get("valor", 0.0)), 
-                    hoje_str, 
+                    c.get("data_vencimento", str(date.today())), 
                     c.get("categoria", "Outros"), 
                     c.get("status", "pendente")
                 ))
                 total_importadas += 1
             conn.commit()
 
-        return {"sucesso": True, "total_importadas": total_importadas, "itens": contas_detectadas}
+        return {"sucesso": True, "total_importadas": total_importadas, "mes_ano_detectado": mes_ano_detectado, "itens": contas_detectadas}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao processar imagem com IA: {str(e)}")
@@ -360,21 +397,38 @@ def criar_conta(conta: ContaPagarSchema):
         conta.id = cursor.lastrowid
         return conta
 
-@app.put("/api/contas/{conta_id}/pagar")
-def pagar_conta(conta_id: int, usuario_id: int = Query(...)):
+@app.put("/api/contas/{conta_id}", response_model=ContaPagarSchema)
+def atualizar_conta(conta_id: int, payload: AtualizarContaSchema, usuario_id: int = Query(...)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        conta = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ? AND usuario_id = ?", (conta_id, usuario_id)).fetchone()
+        if not conta: raise HTTPException(status_code=404, detail="Conta não encontrada.")
+        
+        nova_desc = payload.descricao if payload.descricao is not None else conta["descricao"]
+        cursor.execute("UPDATE contas_a_pagar SET descricao = ? WHERE id = ?", (nova_desc, conta_id))
+        conn.commit()
+        conta_atualizada = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ?", (conta_id,)).fetchone()
+        return dict(conta_atualizada)
+
+@app.put("/api/contas/{conta_id}/status")
+def alterar_status_conta(conta_id: int, payload: AtualizarStatusSchema, usuario_id: int = Query(...)):
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         conta = cursor.execute("SELECT * FROM contas_a_pagar WHERE id = ? AND usuario_id = ?", (conta_id, usuario_id)).fetchone()
         if not conta: raise HTTPException(status_code=404, detail="Conta não encontrada.")
             
-        cursor.execute("UPDATE contas_a_pagar SET status = 'paga' WHERE id = ?", (conta_id,))
-        cursor.execute("""
-            INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
-            VALUES (?, ?, ?, 'saida', ?, ?)
-        """, (usuario_id, f"Pagamento: {conta['descricao']}", conta["valor"], conta["categoria"], str(date.today())))
+        cursor.execute("UPDATE contas_a_pagar SET status = ? WHERE id = ?", (payload.status, conta_id))
+        
+        if payload.status == 'paga':
+            cursor.execute("""
+                INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
+                VALUES (?, ?, ?, 'saida', ?, ?)
+            """, (usuario_id, f"Pagamento: {conta['descricao']}", conta["valor"], conta["categoria"], str(date.today())))
+        
         conn.commit()
-        return {"sucesso": True}
+        return {"sucesso": True, "novo_status": payload.status}
 
 @app.delete("/api/contas/{conta_id}")
 def deletar_conta(conta_id: int, usuario_id: int = Query(...)):
@@ -403,6 +457,20 @@ def criar_meta(meta: MetaEconomiaSchema):
         conn.commit()
         meta.id = cursor.lastrowid
         return meta
+
+@app.put("/api/metas/{meta_id}", response_model=MetaEconomiaSchema)
+def atualizar_meta(meta_id: int, payload: AtualizarMetaSchema, usuario_id: int = Query(...)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        meta = cursor.execute("SELECT * FROM metas_economia WHERE id = ? AND usuario_id = ?", (meta_id, usuario_id)).fetchone()
+        if not meta: raise HTTPException(status_code=404, detail="Meta não encontrada.")
+        
+        novo_titulo = payload.titulo if payload.titulo is not None else meta["titulo"]
+        cursor.execute("UPDATE metas_economia SET titulo = ? WHERE id = ?", (novo_titulo, meta_id))
+        conn.commit()
+        meta_atualizada = cursor.execute("SELECT * FROM metas_economia WHERE id = ?", (meta_id,)).fetchone()
+        return dict(meta_atualizada)
 
 @app.put("/api/metas/{meta_id}/depositar")
 def depositar_meta(meta_id: int, payload: DepositoMetaSchema, usuario_id: int = Query(...)):
@@ -448,6 +516,20 @@ def criar_desejo(desejo: DesejoSchema):
         conn.commit()
         desejo.id = cursor.lastrowid
         return desejo
+
+@app.put("/api/desejos/{desejo_id}", response_model=DesejoSchema)
+def atualizar_desejo(desejo_id: int, payload: AtualizarDesejoSchema, usuario_id: int = Query(...)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        desejo = cursor.execute("SELECT * FROM lista_desejos WHERE id = ? AND usuario_id = ?", (desejo_id, usuario_id)).fetchone()
+        if not desejo: raise HTTPException(status_code=404, detail="Item não encontrado.")
+        
+        novo_titulo = payload.titulo if payload.titulo is not None else desejo["titulo"]
+        cursor.execute("UPDATE lista_desejos SET titulo = ? WHERE id = ?", (novo_titulo, desejo_id))
+        conn.commit()
+        desejo_atualizado = cursor.execute("SELECT * FROM lista_desejos WHERE id = ?", (desejo_id,)).fetchone()
+        return dict(desejo_atualizado)
 
 @app.post("/api/desejos/{desejo_id}/analisar")
 def api_analisar_desejo(desejo_id: int, usuario_id: int = Query(...)):

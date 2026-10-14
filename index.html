@@ -74,6 +74,10 @@
     .titulo-painel { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 
     .secao-scanner-ia { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--card-bg) 100%); }
+    
+    #scanner-loading { display: none; margin-top: 12px; align-items: center; gap: 12px; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; color: var(--ai-purple); }
+    #scanner-loading i { animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
     .secao-wishlist { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.03) 0%, var(--card-bg) 100%); }
     .grid-desejos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -114,7 +118,7 @@
     th { background-color: var(--table-header-bg); padding: 10px 12px; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
     td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; white-space: nowrap; }
 
-    .badge-status { padding: 3px 8px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+    .badge-status { padding: 3px 8px; border-radius: 20px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; cursor: pointer; }
     .badge-status.pendente { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning); }
     .badge-status.atrasada { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
     .badge-status.paga { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
@@ -124,6 +128,7 @@
     .valor-saida { color: var(--danger); font-weight: 700; }
 
     .btn-excluir { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
+    .btn-editar { background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
     .btn-analisar { background: var(--ai-gradient); color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.75rem; width: 100%; }
 
     .grid-metas { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
@@ -142,7 +147,6 @@
 </head>
 <body>
 
-  <!-- TELA DE LOGIN / CADASTRO -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2><i class="fa-solid fa-wallet"></i> Finanças Domésticas</h2>
@@ -185,7 +189,6 @@
   <div id="toast-container"></div>
 
   <div class="container" id="app-dashboard" style="display: none;">
-    <!-- Header -->
     <header id="header-app">
       <h1 id="titulo-app">
         <span><i class="fa-solid fa-wallet"></i> Finanças Domésticas</span>
@@ -200,7 +203,6 @@
       </div>
     </header>
 
-    <!-- Resumo Geral Cards -->
     <section id="secao-resumo">
       <div class="card-resumo" id="card-entradas">
         <i class="fa-solid fa-circle-arrow-down icone-card"></i>
@@ -219,13 +221,13 @@
       </div>
     </section>
 
-    <!-- SCANNER DE CONTAS POR FOTO (IA VISION) -->
+    <!-- SCANNER DE CONTAS POR FOTO -->
     <section class="painel-box secao-scanner-ia">
       <h2 class="titulo-painel" style="color: var(--ai-purple);">
-        <span><i class="fa-solid fa-camera"></i> Scanner IA de Contas em Fileira</span>
+        <span><i class="fa-solid fa-camera"></i> Scanner IA de Contas (Sincronizado Mês/Ano)</span>
       </h2>
       <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">
-        Tire foto ou envie a imagem da folha/caderno com as contas em fileiras. A IA lerá todas e detetará quais têm o <strong>"PG" riscado</strong> (já pagas).
+        Tire foto da folha de contas. A IA detetará o mês e ano impressos na foto, sincronizará as datas e identificará o "PG" riscado.
       </p>
       <form id="form-scanner-foto" enctype="multipart/form-data">
         <div class="linha-dupla-inputs">
@@ -234,13 +236,17 @@
             <input type="file" id="input-foto-fileiras" accept="image/*" required>
           </div>
           <div class="grupo-input" style="justify-content: flex-end;">
-            <button type="submit" style="background: var(--ai-gradient);"><i class="fa-solid fa-wand-magic-sparkles"></i> Processar Contas</button>
+            <button type="submit" id="btn-submit-scanner" style="background: var(--ai-gradient);"><i class="fa-solid fa-wand-magic-sparkles"></i> Processar Contas</button>
           </div>
         </div>
       </form>
+      <div id="scanner-loading">
+        <i class="fa-solid fa-spinner"></i>
+        <span id="scanner-loading-text">A IA está a analisar o mês, ano e as contas... Aguarde.</span>
+      </div>
     </section>
 
-    <!-- LISTA DE DESEJOS & COMPARADOR DE LOJAS -->
+    <!-- LISTA DE DESEJOS -->
     <section class="painel-box secao-wishlist">
       <h2 class="titulo-painel" style="color: var(--ai-purple);">
         <span><i class="fa-solid fa-cart-shopping"></i> Lista de Desejos & Comparador de Preços</span>
@@ -268,33 +274,7 @@
       </div>
     </section>
 
-    <!-- PAINEL DINÂMICO DA PLANILHA GERADA PELA IA -->
-    <section class="painel-box secao-planilha-ia" id="painel-planilha-ia" style="display:none;">
-      <div class="titulo-painel" style="color: var(--success);">
-        <span><i class="fa-solid fa-table"></i> Planilha Solicitada à IA</span>
-        <a id="btn-download-csv-ia" class="btn-exportar" href="#" target="_blank">
-          <i class="fa-solid fa-file-excel"></i> Exportar (CSV)
-        </a>
-      </div>
-      <p id="subtitulo-planilha-ia" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;"></p>
-      
-      <div class="tabela-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Descrição</th>
-              <th>Categoria</th>
-              <th>Tipo</th>
-              <th>Valor</th>
-            </tr>
-          </thead>
-          <tbody id="corpo-tabela-planilha-ia"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- PROJEÇÃO FUTURA -->
+    <!-- PROJEÇÃO -->
     <section class="painel-box secao-projecao">
       <h2 class="titulo-painel" style="color: var(--primary);">
         <span><i class="fa-solid fa-crystal-ball"></i> Previsão e Projeção Futura (IA Forecast)</span>
@@ -321,7 +301,7 @@
       </div>
     </section>
 
-    <!-- PAINEL E GRÁFICO EXCLUSIVO: HOJE -->
+    <!-- HOJE -->
     <section class="painel-box painel-hoje">
       <h2 class="titulo-painel" style="color: var(--primary);">
         <span><i class="fa-solid fa-calendar-day"></i> Resumo de HOJE</span>
@@ -366,7 +346,7 @@
       </div>
     </section>
 
-    <!-- MÓDULO IA: MENTOR -->
+    <!-- MENTOR IA -->
     <section class="painel-box secao-ai-box">
       <h2 class="titulo-painel" style="color: #7e22ce;">
         <span><i class="fa-solid fa-robot"></i> Mentor IA & Comandos</span>
@@ -411,7 +391,7 @@
       </div>
     </section>
 
-    <!-- AGENDAR CONTAS A PAGAR -->
+    <!-- CONTAS A PAGAR -->
     <div class="grid-duplo">
       <section class="painel-box">
         <h2 class="titulo-painel"><span><i class="fa-solid fa-calendar-plus"></i> Agendar Conta a Pagar</span></h2>
@@ -453,7 +433,7 @@
                 <th>Descrição</th>
                 <th>Vencimento</th>
                 <th>Valor</th>
-                <th>Status</th>
+                <th>Status (Clique p/ Pagar/Desfazer)</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -463,7 +443,7 @@
       </section>
     </div>
 
-    <!-- TRANSAÇÕES GERAIS E GRÁFICO GERAL -->
+    <!-- TRANSAÇÕES GERAIS -->
     <div class="grid-duplo">
       <section class="painel-box">
         <h2 class="titulo-painel"><span><i class="fa-solid fa-pen-to-square"></i> Nova Transação Manual</span></h2>
@@ -514,7 +494,7 @@
       </section>
     </div>
 
-    <!-- EXTRATO COMPLETO -->
+    <!-- EXTRATO -->
     <section class="painel-box">
       <div class="titulo-painel">
         <span><i class="fa-solid fa-list-check"></i> Extrato Completo</span>
@@ -757,7 +737,10 @@
           <div class="card-desejo">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <strong>${d.titulo}</strong>
-              <button class="btn-excluir" onclick="deletarDesejo(${d.id})"><i class="fa-solid fa-trash"></i></button>
+              <div style="display:flex; gap:4px;">
+                <button class="btn-editar" onclick="editarDesejo(${d.id}, '${d.titulo}')"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn-excluir" onclick="deletarDesejo(${d.id})"><i class="fa-solid fa-trash"></i></button>
+              </div>
             </div>
             <div style="font-size:1.1rem; font-weight:800; color:var(--ai-purple);">${formatarMoeda(d.valor)}</div>
             
@@ -778,6 +761,22 @@
           </div>
         `;
       }).join('');
+    }
+
+    async function editarDesejo(id, nomeAtual) {
+      const novoNome = prompt("Novo nome para o desejo:", nomeAtual);
+      if (!novoNome || !novoNome.trim()) return;
+      try {
+        await fetch(`${API_URL}/desejos/${id}?usuario_id=${usuarioLogado.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titulo: novoNome.trim() })
+        });
+        mostrarToast('Desejo atualizado!', 'sucesso');
+        await carregarDadosGlobais();
+      } catch (e) {
+        mostrarToast('Erro ao atualizar.', 'erro');
+      }
     }
 
     async function analisarDesejo(id) {
@@ -830,13 +829,49 @@
           <td><strong>${c.descricao}</strong></td>
           <td>${formatarDataBR(c.data_vencimento)}</td>
           <td class="valor-saida">${formatarMoeda(Number(c.valor))}</td>
-          <td><span class="badge-status ${c.status}">${c.status}</span></td>
+          <td>
+            <span class="badge-status ${c.status}" onclick="alternarStatusConta(${c.id}, '${c.status}')" title="Clique para mudar estado">
+              ${c.status} <i class="fa-solid fa-rotate"></i>
+            </span>
+          </td>
           <td style="display:flex; gap:6px;">
-            ${c.status !== 'paga' ? `<button class="btn-acao" style="font-size:0.7rem; padding:4px 8px;" onclick="pagarConta(${c.id})"><i class="fa-solid fa-check"></i> Pagar</button>` : '<span style="color:var(--success); font-weight:700;"><i class="fa-solid fa-check-double"></i></span>'}
-            <button class="btn-excluir" onclick="deletarConta(${c.id})"><i class="fa-solid fa-trash"></i></button>
+            <button class="btn-editar" onclick="editarConta(${c.id}, '${c.descricao}')" title="Editar nome"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn-excluir" onclick="deletarConta(${c.id})" title="Excluir"><i class="fa-solid fa-trash"></i></button>
           </td>
         </tr>
       `).join('');
+    }
+
+    async function editarConta(id, nomeAtual) {
+      const novoNome = prompt("Novo nome para a conta:", nomeAtual);
+      if (!novoNome || !novoNome.trim()) return;
+      try {
+        await fetch(`${API_URL}/contas/${id}?usuario_id=${usuarioLogado.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ descricao: novoNome.trim() })
+        });
+        mostrarToast('Nome da conta atualizado!', 'sucesso');
+        await carregarDadosGlobais();
+      } catch (e) {
+        mostrarToast('Erro ao atualizar.', 'erro');
+      }
+    }
+
+    async function alternarStatusConta(id, statusAtual) {
+      const novoStatus = statusAtual === 'paga' ? 'pendente' : 'paga';
+      try {
+        await fetch(`${API_URL}/contas/${id}/status?usuario_id=${usuarioLogado.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: novoStatus })
+        });
+        mostrarToast(`Estado alterado para: ${novoStatus}`, 'sucesso');
+        await carregarDadosGlobais();
+        await carregarProjecao(1);
+      } catch (e) {
+        mostrarToast('Erro ao alterar estado da conta.', 'erro');
+      }
     }
 
     function renderizarTabelaExtrato() {
@@ -872,7 +907,10 @@
           <div class="card-meta">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <strong>${m.titulo}</strong>
-              <button class="btn-excluir" style="padding:2px 6px; font-size:0.7rem;" onclick="deletarMeta(${m.id})"><i class="fa-solid fa-trash"></i></button>
+              <div style="display:flex; gap:4px;">
+                <button class="btn-editar" style="padding:2px 6px; font-size:0.7rem;" onclick="editarMeta(${m.id}, '${m.titulo}')"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn-excluir" style="padding:2px 6px; font-size:0.7rem;" onclick="deletarMeta(${m.id})"><i class="fa-solid fa-trash"></i></button>
+              </div>
             </div>
             <div class="meta-barra-bg">
               <div class="meta-barra-fill" style="width: ${pct}%"></div>
@@ -888,6 +926,22 @@
       }).join('');
     }
 
+    async function editarMeta(id, nomeAtual) {
+      const novoNome = prompt("Novo nome para a caixinha:", nomeAtual);
+      if (!novoNome || !novoNome.trim()) return;
+      try {
+        await fetch(`${API_URL}/metas/${id}?usuario_id=${usuarioLogado.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titulo: novoNome.trim() })
+        });
+        mostrarToast('Caixinha atualizada!', 'sucesso');
+        await carregarDadosGlobais();
+      } catch (e) {
+        mostrarToast('Erro ao atualizar.', 'erro');
+      }
+    }
+
     async function deletarTransacao(id) {
       try {
         await fetch(`${API_URL}/transacoes/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
@@ -901,15 +955,6 @@
       try {
         await fetch(`${API_URL}/contas/${id}?usuario_id=${usuarioLogado.id}`, { method: 'DELETE' });
         mostrarToast('Conta removida!', 'sucesso');
-        await carregarDadosGlobais();
-        await carregarProjecao(1);
-      } catch (e) {}
-    }
-
-    async function pagarConta(id) {
-      try {
-        await fetch(`${API_URL}/contas/${id}/pagar?usuario_id=${usuarioLogado.id}`, { method: 'PUT' });
-        mostrarToast('Conta paga!', 'sucesso');
         await carregarDadosGlobais();
         await carregarProjecao(1);
       } catch (e) {}
@@ -987,21 +1032,44 @@
         formData.append('usuario_id', usuarioLogado.id);
         formData.append('foto', fileInput.files[0]);
 
-        mostrarToast('IA a ler contas em fileiras e detetar "PG" riscado...', 'info');
+        const loadingDiv = document.getElementById('scanner-loading');
+        const loadingText = document.getElementById('scanner-loading-text');
+        const btnSubmit = document.getElementById('btn-submit-scanner');
+
+        loadingDiv.style.display = 'flex';
+        btnSubmit.disabled = true;
+        loadingText.textContent = "A enviar imagem para a IA Gemini Vision (sincronizando mês/ano)...";
+
+        let progresso = 20;
+        const intervalo = setInterval(() => {
+          progresso += 15;
+          if (progresso <= 80) {
+            loadingText.textContent = `A IA está a detetar o mês/ano, fileiras e "PG" riscado... (${progresso}%)`;
+          }
+        }, 1000);
+
         try {
           const resp = await fetch(`${API_URL}/scanner-contas-foto`, {
             method: 'POST',
             body: formData
           });
           const res = await resp.json();
+          
+          clearInterval(intervalo);
+          loadingDiv.style.display = 'none';
+          btnSubmit.disabled = false;
+
           if (resp.ok) {
-            mostrarToast(`Sucesso! ${res.total_importadas} contas processadas.`, 'sucesso');
+            mostrarToast(`Sucesso! ${res.total_importadas} contas sincronizadas (${res.mes_ano_detectado}).`, 'sucesso');
             e.target.reset();
             await carregarDadosGlobais();
           } else {
             mostrarToast(res.detail || 'Erro ao processar imagem.', 'erro');
           }
         } catch (err) {
+          clearInterval(intervalo);
+          loadingDiv.style.display = 'none';
+          btnSubmit.disabled = false;
           mostrarToast('Erro de comunicação com o servidor.', 'erro');
         }
       };
