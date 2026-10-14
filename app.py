@@ -28,8 +28,8 @@ except ImportError:
 
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
-    description="Backend seguro com Webhook Cakto e Senhas Únicas Automáticas",
-    version="36.0.0"
+    description="Backend seguro com Webhook Cakto e Primeiro Acesso do Cliente",
+    version="37.0.0"
 )
 
 app.add_middleware(
@@ -59,7 +59,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nome TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                senha_hash TEXT NOT NULL,
+                senha_hash TEXT,
                 sessao_token TEXT
             )
         """)
@@ -134,6 +134,10 @@ class UsuarioLogin(BaseModel):
     email: str
     senha: str
 
+class PrimeiroAcessoSchema(BaseModel):
+    email: str
+    nova_senha: str
+
 class TransacaoSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -184,7 +188,7 @@ def login_usuario(credenciais: UsuarioLogin):
                                (email_limpo, hash_senha(credenciais.senha))).fetchone()
         
         if not u:
-            raise HTTPException(status_code=401, detail="Acesso negado. E-mail não encontrado ou pagamento não aprovado via Cakto.")
+            raise HTTPException(status_code=401, detail="Acesso negado. E-mail não encontrado, senha incorreta ou pagamento não aprovado.")
         
         novo_token = secrets.token_hex(32)
         cursor.execute("UPDATE usuarios SET sessao_token = ? WHERE id = ?", (novo_token, u["id"]))
@@ -195,6 +199,30 @@ def login_usuario(credenciais: UsuarioLogin):
             "usuario": {"id": u["id"], "nome": u["nome"], "email": u["email"]},
             "sessao_token": novo_token
         }
+
+@app.post("/api/primeiro-acceso")
+def primeiro_acesso(dados: PrimeiroAcessoSchema):
+    email_limpo = dados.email.lower().strip()
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verifica se o e-mail foi pré-cadastrado pelo webhook da Cakto
+        u = cursor.execute("SELECT * FROM usuarios WHERE email = ?", (email_limpo,)).fetchone()
+        
+        if not u:
+            raise HTTPException(status_code=404, detail="E-mail não encontrado como comprador na Cakto. Certifique-se de usar o mesmo e-mail da compra.")
+        
+        if u["senha_hash"] and u["senha_hash"] != "":
+            raise HTTPException(status_code=400, detail="Esta conta já possui uma senha definida. Utilize a tela de login ou recuperação.")
+        
+        # Define a senha escolhida pelo cliente
+        senha_h = hash_senha(dados.nova_senha)
+        cursor.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?", (senha_h, u["id"]))
+        conn.commit()
+        
+        return {"sucesso": True, "mensagem": "Senha definida com sucesso! Já pode fazer login."}
 
 @app.post("/api/verificar-sessao")
 def verificar_sessao(usuario_id: int = Query(...), token: str = Query(...)):
@@ -223,24 +251,21 @@ async def webhook_cakto(request: Request):
         nome_cliente = cliente_dados.get("name") or dados.get("name") or "Cliente Pro"
         
         if any(keyword in status_pagamento for keyword in ["approved", "paid", "order.paid", "test", "sucesso"]) and email_cliente:
-            # Gera uma senha aleatória única e segura para este comprador específico
-            senha_aleatoria = secrets.token_hex(6)
-            senha_h = hash_senha(senha_aleatoria)
-            
             with sqlite3.connect(DB_PATH) as conn:
                 cursor = conn.cursor()
                 existente = cursor.execute("SELECT id FROM usuarios WHERE email = ?", (email_cliente,)).fetchone()
                 
                 if not existente:
+                    # Cria o registo do comprador com senha vazia para ele definir no primeiro acesso
                     cursor.execute("""
-                        INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)
-                    """, (nome_cliente, email_cliente, senha_h))
+                        INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, '')
+                    """, (nome_cliente, email_cliente))
                     conn.commit()
-                    acao = "conta_criada_com_senha_unica"
+                    acao = "comprador_registrado_para_primeiro_acesso"
                 else:
-                    acao = "cliente_ja_cadastrado"
+                    acao = "cliente_ja_registrado"
                     
-            return {"status": "sucesso", "acao": acao, "email": email_cliente, "senha_temporaria_gerada": senha_aleatoria}
+            return {"status": "sucesso", "acao": acao, "email": email_cliente}
             
         return {"status": "ignorado", "recebido": status_pagamento}
     except Exception as e:
