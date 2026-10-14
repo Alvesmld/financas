@@ -25,9 +25,9 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 app = FastAPI(
-    title="Finanças Domésticas AI Engine Vision Sync",
-    description="Backend com sincronização automática de mês/ano e IA Vision",
-    version="23.0.0"
+    title="Finanças Domésticas AI Engine Bolinha Chat",
+    description="Backend com assistente flutuante inteligente e execução de comandos",
+    version="24.0.0"
 )
 
 app.add_middleware(
@@ -247,15 +247,15 @@ async def scanner_contas_foto(
         
         prompt_vision = """
         Analise esta imagem que contém várias contas listadas em fileiras (linhas).
-        1. Identifique o MÊS e o ANO impressos ou escritos na folha/caderno (ex: "Janeiro/2026", "Outubro de 2026", etc.).
+        1. Identifique o MÊS e o ANO impressos ou escritos na folha/caderno.
         2. Para cada conta detetada na fileira, extraia:
            - descricao: O nome da conta ou serviço.
            - valor: O valor numérico (float).
            - categoria: Escolha obrigatoriamente entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros'].
            - status: 'paga' se ao lado da conta houver a sigla "PG" visível que esteja riscada, tachada ou com um traço por cima; caso contrário, defina 'pendente'.
-           - data_vencimento: A data de vencimento formatada rigorosamente no padrão ISO "YYYY-MM-DD", sincronizando o dia da conta com o MÊS e ANO detetados na imagem. Se não houver dia específico, utilize o dia 10 do mês detetado.
+           - data_vencimento: A data de vencimento rigorosamente no padrão ISO "YYYY-MM-DD", sincronizando o dia da conta com o MÊS e ANO detetados.
 
-        Retorne APENAS um JSON estrito com o seguinte formato, sem texto adicional:
+        Retorne APENAS um JSON estrito com o seguinte formato:
         {
           "mes_ano_detectado": "Outubro/2026",
           "contas": [
@@ -577,7 +577,81 @@ def exportar_csv(usuario_id: int = Query(...), data_inicio: Optional[str] = Quer
 
 @app.post("/api/chat-ai")
 def chat_mentor(payload: ChatPrompt):
-    return {"resposta": "Comando processado com sucesso.", "acao_executada": False}
+    pergunta = payload.pergunta.lower().strip()
+    uid = payload.usuario_id
+
+    if not HAS_GEMINI_SDK:
+        return {"resposta": "Chave Gemini não configurada no servidor.", "acao_executada": False}
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Coleta resumo financeiro atual para a IA ter contexto
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            transacoes = cursor.execute("SELECT * FROM transacoes WHERE usuario_id = ?", (uid,)).fetchall()
+            entradas = sum(t["valor"] for t in transacoes if t["tipo"] == "entrada")
+            saidas = sum(t["valor"] for t in transacoes if t["tipo"] == "saida")
+            saldo = entradas - saidas
+
+        prompt_sistema = f"""
+        Você é o JARVIS, um assistente financeiro pessoal integrado num aplicativo.
+        O saldo atual do usuário é R$ {saldo:.2f}.
+        O usuário pode pedir para:
+        1. Adicionar gastos ou receitas (ex: "adicionei gasto de mercado 150 reais hoje").
+        2. Gerar planilha / filtrar extrato a partir de uma data (ex: "monte uma planilha do dia 15 em diante").
+        
+        Se o usuário pediu para adicionar transações, retorne um JSON estruturado indicando a ação.
+        Se o usuário pediu planilha/extrato a partir de uma data, identifique a data de início (formato YYYY-MM-DD).
+        
+        Responda obrigatoriamente num JSON com esta estrutura exata:
+        {
+          "resposta_texto": "Mensagem amigável para o usuário explicando o que foi feito.",
+          "acao": "adicionar_transacao" | "gerar_planilha_data" | "nenhuma",
+          "dados_transacao": {"descricao": "...", "valor": 0.0, "tipo": "saida"|"entrada", "categoria": "...", "data": "YYYY-MM-DD"},
+          "filtro_data_inicio": "YYYY-MM-DD"
+        }
+        """
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt_sistema, f"Pedido do usuário: {payload.pergunta}"]
+        )
+
+        texto_limpo = response.text.replace("```json", "").replace("```", "").strip()
+        resultado = json.loads(texto_limpo)
+
+        acao_executada = False
+        resposta_final = resultado.get("resposta_texto", "Comando processado.")
+        acao = resultado.get("acao")
+
+        if acao == "adicionar_transacao":
+            d = resultado.get("dados_transacao", {})
+            with sqlite3.connect(DB_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    uid,
+                    d.get("descricao", "Gasto IA"),
+                    float(d.get("valor", 0.0)),
+                    d.get("tipo", "saida"),
+                    d.get("categoria", "Outros"),
+                    d.get("data", str(date.today()))
+                ))
+                conn.commit()
+            acao_executada = True
+
+        elif acao == "gerar_planilha_data":
+            d_ini = resultado.get("filtro_data_inicio", str(date.today()))
+            resposta_final += f" (Filtro aplicado na exportação a partir de {d_ini}). Use o botão Exportar CSV na tabela abaixo para baixar."
+
+        return {"resposta": resposta_final, "acao_executada": acao_executada}
+
+    except Exception as e:
+        return {"resposta": f"Entendi o seu pedido, mas ocorreu um pequeno erro ao processar: {str(e)}", "acao_executada": False}
 
 if __name__ == "__main__":
     import uvicorn

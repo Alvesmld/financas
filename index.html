@@ -74,7 +74,6 @@
     .titulo-painel { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 
     .secao-scanner-ia { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--card-bg) 100%); }
-    
     #scanner-loading { display: none; margin-top: 12px; align-items: center; gap: 12px; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; color: var(--ai-purple); }
     #scanner-loading i { animation: spin 1s linear infinite; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -108,10 +107,26 @@
     button[type="submit"], .btn-acao { background-color: var(--primary); color: white; border: none; padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem; width: 100%; }
     .btn-exportar { background-color: var(--success); color: white; border: none; padding: 8px 12px; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; font-size: 0.8rem; }
 
-    .secao-ai-box { border: 1.5px dashed #a855f7; background: linear-gradient(180deg, rgba(168, 85, 247, 0.05) 0%, var(--card-bg) 100%); }
-    .card-insight-ia { background: var(--card-bg); border-left: 4px solid #a855f7; padding: 10px 12px; border-radius: 8px; font-size: 0.8rem; }
-    .container-chat-input { display: flex; gap: 8px; margin-top: 6px; }
-    #input-prompt-ia { flex: 1; padding: 9px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-main); outline: none; font-size: 0.85rem; min-width: 0; }
+    /* BOLINHA FLUTUANTE DA IA NO CANTO DA TELA */
+    #bolinha-ia-container { position: fixed; bottom: 24px; right: 24px; z-index: 40000; display: flex; flex-direction: column; align-items: flex-end; }
+    #btn-bolinha-ia { width: 60px; height: 60px; border-radius: 50%; background: var(--ai-gradient); border: none; color: white; font-size: 1.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(139, 92, 246, 0.5); display: flex; align-items: center; justify-content: center; transition: transform 0.2s; position: relative; }
+    #btn-bolinha-ia:hover { transform: scale(1.08); }
+    #bolinha-notif { position: absolute; top: 0; right: 0; width: 16px; height: 16px; background: var(--success); border-radius: 50%; border: 2px solid var(--card-bg); display: none; }
+
+    /* JANELA DE CHAT FLUTUANTE */
+    #janela-chat-ia { position: fixed; bottom: 96px; right: 24px; width: 360px; max-width: calc(100vw - 32px); height: 500px; max-height: calc(100vh - 120px); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 40001; display: none; flex-direction: column; overflow: hidden; animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    @keyframes popUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+    .chat-header { background: var(--ai-gradient); color: white; padding: 14px; font-weight: 800; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+    .chat-mensagens { flex: 1; padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; }
+    .msg-chat { padding: 10px 14px; border-radius: 12px; max-width: 85%; word-break: break-word; line-height: 1.4; }
+    .msg-chat.ia { background: var(--input-bg); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 2px; border-left: 3px solid var(--ai-purple); }
+    .msg-chat.usuario { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+    .msg-chat.status-acao { background: rgba(139, 92, 246, 0.1); color: var(--ai-purple); font-style: italic; align-self: center; font-size: 0.75rem; border: 1px dashed var(--ai-purple); text-align: center; width: 100%; border-radius: 8px; }
+
+    .chat-footer { padding: 10px; background: var(--bg-color); border-top: 1px solid var(--border-color); display: flex; gap: 8px; }
+    .chat-footer input { flex: 1; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--text-main); outline: none; font-size: 0.85rem; }
+    .chat-footer button { background: var(--ai-purple); color: white; border: none; width: 42px; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
 
     .tabela-responsive { width: 100%; overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); -webkit-overflow-scrolling: touch; }
     table { width: 100%; border-collapse: collapse; text-align: left; min-width: 480px; }
@@ -147,6 +162,29 @@
 </head>
 <body>
 
+  <!-- BOLINHA FLUTUANTE DA IA -->
+  <div id="bolinha-ia-container" style="display: none;">
+    <div id="janela-chat-ia">
+      <div class="chat-header">
+        <span><i class="fa-solid fa-robot"></i> JARVIS IA Financeira</span>
+        <button onclick="alternarJanelaChat()" style="background:none; border:none; color:white; cursor:pointer; font-size:1rem;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="chat-mensagens" id="chat-mensagens-corpo">
+        <div class="msg-chat ia">Olá! Sou o seu assistente financeiro. Pode pedir-me para adicionar gastos, consultar saldo ou gerar planilhas (ex: <i>'Monte uma planilha a partir do dia 15'</i>).</div>
+      </div>
+      <div class="chat-footer">
+        <input type="text" id="input-chat-flutuante" placeholder="Digite seu pedido...">
+        <button id="btn-enviar-chat-flutuante"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+    </div>
+
+    <button id="btn-bolinha-ia" onclick="alternarJanelaChat()" title="Conversar com a IA">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+      <span id="bolinha-notif"></span>
+    </button>
+  </div>
+
+  <!-- TELA DE LOGIN / CADASTRO -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2><i class="fa-solid fa-wallet"></i> Finanças Domésticas</h2>
@@ -203,6 +241,7 @@
       </div>
     </header>
 
+    <!-- RESUMO -->
     <section id="secao-resumo">
       <div class="card-resumo" id="card-entradas">
         <i class="fa-solid fa-circle-arrow-down icone-card"></i>
@@ -221,7 +260,7 @@
       </div>
     </section>
 
-    <!-- SCANNER DE CONTAS POR FOTO -->
+    <!-- SCANNER DE FOTO -->
     <section class="painel-box secao-scanner-ia">
       <h2 class="titulo-painel" style="color: var(--ai-purple);">
         <span><i class="fa-solid fa-camera"></i> Scanner IA de Contas (Sincronizado Mês/Ano)</span>
@@ -342,25 +381,6 @@
           <div style="height: 150px; position: relative;">
             <canvas id="canvas-grafico-hoje"></canvas>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- MENTOR IA -->
-    <section class="painel-box secao-ai-box">
-      <h2 class="titulo-painel" style="color: #7e22ce;">
-        <span><i class="fa-solid fa-robot"></i> Mentor IA & Comandos</span>
-      </h2>
-      <div id="box-chat-ia">
-        <div class="card-insight-ia">
-          <strong>Assistente de Finanças:</strong>
-          <span id="texto-insight-ia">Digite comandos como: <i>'Monte uma planilha do dia 15 em diante'</i> ou <i>'Adicione um tênis de 200 na lista de desejos'</i>.</span>
-        </div>
-        <div class="container-chat-input">
-          <input type="text" id="input-prompt-ia" placeholder="Ex: Monte uma planilha do dia 15 ate dia 30">
-          <button id="btn-perguntar-ia" style="background: #7e22ce; color: white; border: none; padding: 0 14px; border-radius: 8px; cursor: pointer; flex-shrink: 0;">
-            <i class="fa-solid fa-paper-plane"></i>
-          </button>
         </div>
       </div>
     </section>
@@ -498,9 +518,13 @@
     <section class="painel-box">
       <div class="titulo-painel">
         <span><i class="fa-solid fa-list-check"></i> Extrato Completo</span>
-        <a id="btn-exportar-extrato" class="btn-exportar" href="#" target="_blank">
-          <i class="fa-solid fa-download"></i> Exportar Tudo (CSV)
-        </a>
+        <div style="display:flex; gap: 8px;">
+          <input type="date" id="filtro-csv-inicio" style="padding:6px; font-size:0.75rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
+          <input type="date" id="filtro-csv-fim" style="padding:6px; font-size:0.75rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
+          <a id="btn-exportar-extrato" class="btn-exportar" href="#" onclick="atualizarLinkExportacao(event)" target="_blank">
+            <i class="fa-solid fa-download"></i> Exportar (CSV)
+          </a>
+        </div>
       </div>
       <div class="tabela-responsive">
         <table>
@@ -553,21 +577,21 @@
         usuarioLogado = JSON.parse(u);
         document.getElementById('auth-screen').style.display = 'none';
         document.getElementById('app-dashboard').style.display = 'flex';
+        document.getElementById('bolinha-ia-container').style.display = 'flex';
         document.getElementById('nome-usuario-logado').textContent = usuarioLogado.nome;
-        
-        document.getElementById('btn-exportar-extrato').href = `${API_URL}/exportar-csv?usuario_id=${usuarioLogado.id}`;
         
         document.getElementById('input-data').value = new Date().toISOString().split('T')[0];
         document.getElementById('input-conta-vencimento').value = new Date().toISOString().split('T')[0];
         
         initFormularios();
-        initMentorIA();
+        initChatFlutuanteIA();
         initScannerFoto();
         carregarDadosGlobais();
         carregarProjecao(1);
       } else {
         document.getElementById('auth-screen').style.display = 'flex';
         document.getElementById('app-dashboard').style.display = 'none';
+        document.getElementById('bolinha-ia-container').style.display = 'none';
       }
     }
 
@@ -617,7 +641,7 @@
             mostrarToast(res.detail || 'Senha ou e-mail inválidos.', 'erro');
           }
         } catch (err) {
-          mostrarToast('Erro de conexão. Entrando como convidado...', 'erro');
+          mostrarToast('Entrando como convidado...', 'erro');
           entrarComoDemo();
         }
       };
@@ -659,6 +683,26 @@
         localStorage.setItem('app_tema_preferido', novoTema);
         renderizarGraficos();
       };
+    }
+
+    function alternarJanelaChat() {
+      const janela = document.getElementById('janela-chat-ia');
+      const aberto = janela.style.display === 'flex';
+      janela.style.display = aberto ? 'none' : 'flex';
+      if (!aberto) {
+        document.getElementById('bolinha-notif').style.display = 'none';
+        const corpo = document.getElementById('chat-mensagens-corpo');
+        corpo.scrollTop = corpo.scrollHeight;
+      }
+    }
+
+    function atualizarLinkExportacao(e) {
+      const ini = document.getElementById('filtro-csv-inicio').value;
+      const fim = document.getElementById('filtro-csv-fim').value;
+      let url = `${API_URL}/exportar-csv?usuario_id=${usuarioLogado.id}`;
+      if (ini) url += `&data_inicio=${ini}`;
+      if (fim) url += `&data_fim=${fim}`;
+      e.currentTarget.href = url;
     }
 
     async function carregarDadosGlobais() {
@@ -1155,20 +1199,53 @@
       };
     }
 
-    function initMentorIA() {
-      document.getElementById('btn-perguntar-ia').onclick = async () => {
-        const input = document.getElementById('input-prompt-ia');
-        if (!input.value.trim()) return;
+    function initChatFlutuanteIA() {
+      const btnEnviar = document.getElementById('btn-enviar-chat-flutuante');
+      const inputChat = document.getElementById('input-chat-flutuante');
+      const corpoChat = document.getElementById('chat-mensagens-corpo');
 
-        const resp = await fetch(`${API_URL}/chat-ai`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuario_id: usuarioLogado.id, pergunta: input.value })
-        });
-        const data = await resp.json();
-        document.getElementById('texto-insight-ia').innerText = data.resposta;
-        input.value = '';
+      const enviarMsg = async () => {
+        const texto = inputChat.value.trim();
+        if (!texto) return;
+
+        // Adiciona balão do utilizador
+        corpoChat.innerHTML += `<div class="msg-chat usuario">${texto}</div>`;
+        inputChat.value = '';
+        corpoChat.scrollTop = corpoChat.scrollHeight;
+
+        // Indicador visível de "pensando / executando"
+        const idStatus = 'status-ia-' + Date.now();
+        corpoChat.innerHTML += `<div class="msg-chat status-acao" id="${idStatus}"><i class="fa-solid fa-spinner fa-spin"></i> JARVIS está a processar o seu pedido...</div>`;
+        corpoChat.scrollTop = corpoChat.scrollHeight;
+
+        try {
+          const resp = await fetch(`${API_URL}/chat-ai`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuario_id: usuarioLogado.id, pergunta: texto })
+          });
+          const res = await resp.json();
+
+          // Remove indicador de loading
+          document.getElementById(idStatus).remove();
+
+          // Adiciona resposta da IA
+          corpoChat.innerHTML += `<div class="msg-chat ia">${res.resposta}</div>`;
+          corpoChat.scrollTop = corpoChat.scrollHeight;
+
+          // Se a IA executou alguma ação que alterou dados, recarrega o dashboard
+          if (res.acao_executada) {
+            await carregarDadosGlobais();
+            await carregarProjecao(1);
+          }
+        } catch (e) {
+          document.getElementById(idStatus).remove();
+          corpoChat.innerHTML += `<div class="msg-chat ia">Erro de comunicação com o servidor.</div>`;
+        }
       };
+
+      btnEnviar.onclick = enviarMsg;
+      inputChat.onkeypress = (e) => { if (e.key === 'Enter') enviarMsg(); };
     }
   </script>
 </body>
