@@ -30,7 +30,7 @@ except ImportError:
 app = FastAPI(
     title="Finanças Domésticas AI - ALVESMLD SaaS Master",
     description="Backend completo com todas as funcionalidades, IA, Licenciamento Cakto e Anti-Sharing",
-    version="32.0.0"
+    version="33.0.0"
 )
 
 app.add_middleware(
@@ -168,26 +168,6 @@ class TransacaoSchema(BaseModel):
     categoria: str
     data: str
 
-class ContaPagarSchema(BaseModel):
-    id: Optional[int] = None
-    usuario_id: int
-    descricao: str
-    valor: float
-    data_vencimento: str
-    categoria: str
-    status: Optional[str] = "pendente"
-
-class MetaEconomiaSchema(BaseModel):
-    id: Optional[int] = None
-    usuario_id: int
-    titulo: str
-    valor_objetivo: float
-    valor_atual: Optional[float] = 0.0
-    data_limite: Optional[str] = None
-
-class DepositoMetaSchema(BaseModel):
-    valor: float
-
 class OrcamentoSchema(BaseModel):
     id: Optional[int] = None
     usuario_id: int
@@ -315,13 +295,10 @@ async def scanner_contas_foto(
             part_file = Image.open(io.BytesIO(conteudo_ficheiro))
 
         prompt_vision = """
-        Analise este documento ou imagem (fatura de energia, internet, extrato ou lista de contas).
-        1. Identifique o MÊS e o ANO de referência.
-        2. Extraia cada conta encontrada: descricao, valor (float), categoria (entre ['Moradia', 'Alimentação', 'Transporte', 'Lazer', 'Outros']), status ('paga' ou 'pendente'), data_vencimento (YYYY-MM-DD).
-        Retorne APENAS um JSON estrito:
+        Analise este documento ou imagem. Retorne APENAS um JSON estrito:
         {
           "mes_ano_detectado": "Outubro/2026",
-          "contas": [{"descricao": "...", "valor": 0.0, "categoria": "...", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
+          "contas": [{"descricao": "...", "valor": 0.0, "categoria": "Outros", "status": "pendente", "data_vencimento": "YYYY-MM-DD"}]
         }
         """
         response = client.models.generate_content(model='gemini-2.5-flash', contents=[part_file, prompt_vision])
@@ -371,17 +348,6 @@ def deletar_transacao(transacao_id: int, usuario_id: int = Query(...)):
         conn.commit()
         return {"sucesso": True}
 
-@app.get("/api/hoje")
-def obter_dados_hoje(usuario_id: int = Query(...)):
-    hoje_str = str(date.today())
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        transacoes_hoje = cursor.execute("SELECT * FROM transacoes WHERE usuario_id = ? AND data = ? ORDER BY id DESC", (usuario_id, hoje_str)).fetchall()
-        entradas = sum(t["valor"] for t in transacoes_hoje if t["tipo"] == "entrada")
-        saidas = sum(t["valor"] for t in transacoes_hoje if t["tipo"] == "saida")
-        return {"data": hoje_str, "total_entradas": round(entradas, 2), "total_saidas": round(saidas, 2), "transacoes": [dict(t) for t in transacoes_hoje]}
-
 @app.get("/api/projecao/{meses}")
 def api_projecao(meses: int, usuario_id: int = Query(...)):
     with sqlite3.connect(DB_PATH) as conn:
@@ -398,86 +364,6 @@ def api_projecao(meses: int, usuario_id: int = Query(...)):
         saldo_final = saldo_atual + (entradas * meses) - (saidas * meses) - total_contas
         
         return {"periodo_meses": meses, "saldo_atual": round(saldo_atual, 2), "entradas_estimadas": round(entradas * meses, 2), "saidas_estimadas": round(saidas * meses, 2), "contas_agendadas": round(total_contas, 2), "saldo_projetado_final": round(saldo_final, 2)}
-
-@app.get("/api/contas")
-def listar_contas(usuario_id: int = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        rows = cursor.execute("SELECT * FROM contas_a_pagar WHERE usuario_id = ? ORDER BY data_vencimento ASC", (usuario_id,)).fetchall()
-        hoje = str(date.today())
-        resultados = []
-        for r in rows:
-            c = dict(r)
-            if c["status"] == "pendente":
-                if c["data_vencimento"] < hoje: c["status"] = "atrasada"
-                elif c["data_vencimento"] == hoje: c["status"] = "hoje"
-            resultados.append(c)
-        return resultados
-
-@app.post("/api/contas")
-def criar_conta(conta: ContaPagarSchema):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO contas_a_pagar (usuario_id, descricao, valor, data_vencimento, categoria, status)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (conta.usuario_id, conta.descricao, conta.valor, conta.data_vencimento, conta.categoria, conta.status))
-        conn.commit()
-        conta.id = cursor.lastrowid
-        return conta
-
-@app.delete("/api/contas/{conta_id}")
-def deletar_conta(conta_id: int, usuario_id: int = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM contas_a_pagar WHERE id = ? AND usuario_id = ?", (conta_id, usuario_id))
-        conn.commit()
-        return {"sucesso": True}
-
-@app.get("/api/metas")
-def listar_metas(usuario_id: int = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        rows = cursor.execute("SELECT * FROM metas_economia WHERE usuario_id = ?", (usuario_id,)).fetchall()
-        return [dict(r) for r in rows]
-
-@app.post("/api/metas")
-def criar_meta(meta: MetaEconomiaSchema):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO metas_economia (usuario_id, titulo, valor_objetivo, valor_atual, data_limite)
-            VALUES (?, ?, ?, ?, ?)
-        """, (meta.usuario_id, meta.titulo, meta.valor_objetivo, meta.valor_atual or 0.0, meta.data_limite))
-        conn.commit()
-        meta.id = cursor.lastrowid
-        return meta
-
-@app.put("/api/metas/{meta_id}/depositar")
-def depositar_meta(meta_id: int, payload: DepositoMetaSchema, usuario_id: int = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        meta = cursor.execute("SELECT * FROM metas_economia WHERE id = ? AND usuario_id = ?", (meta_id, usuario_id)).fetchone()
-        if not meta: raise HTTPException(status_code=404, detail="Meta não encontrada.")
-        novo_valor = meta["valor_atual"] + payload.valor
-        cursor.execute("UPDATE metas_economia SET valor_atual = ? WHERE id = ?", (novo_valor, meta_id))
-        cursor.execute("""
-            INSERT INTO transacoes (usuario_id, descricao, valor, tipo, categoria, data)
-            VALUES (?, ?, ?, 'saida', 'Outros', ?)
-        """, (usuario_id, f"Caixinha: {meta['titulo']}", payload.valor, str(date.today())))
-        conn.commit()
-        return {"sucesso": True, "novo_total": novo_valor}
-
-@app.delete("/api/metas/{meta_id}")
-def deletar_meta(meta_id: int, usuario_id: int = Query(...)):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM metas_economia WHERE id = ? AND usuario_id = ?", (meta_id, usuario_id))
-        conn.commit()
-        return {"sucesso": True}
 
 @app.get("/api/orcamentos")
 def listar_orcamentos(usuario_id: int = Query(...)):

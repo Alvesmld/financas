@@ -13,24 +13,20 @@
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
       --bg-color: #0f172a; --card-bg: #1e293b; --input-bg: #334155;
       --text-main: #f8fafc; --text-muted: #94a3b8; --primary: #3b82f6;
       --ai-purple: #8b5cf6; --ai-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-      --success: #10b981; --success-bg: #ecfdf5; --danger: #ef4444; --danger-bg: #fef2f2;
-      --warning: #f59e0b; --warning-bg: #fffbeb;
+      --success: #10b981; --danger: #ef4444; --danger-bg: #fef2f2;
       --border-color: #334155; --table-header-bg: #334155;
       --radius: 16px; --radius-sm: 10px; --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
     }
-
     [data-theme="light"] {
       --bg-color: #f8fafc; --card-bg: #ffffff; --input-bg: #fafafa;
       --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb;
       --border-color: #e2e8f0; --table-header-bg: #f1f5f9;
       --shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.05);
     }
-
     body { background-color: var(--bg-color); color: var(--text-main); font-family: 'Plus Jakarta Sans', sans-serif; padding: 16px 10px; line-height: 1.5; }
     .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; width: 100%; }
 
@@ -58,13 +54,12 @@
     .icone-card { position: absolute; top: 16px; right: 16px; font-size: 1.1rem; opacity: 0.6; }
     .rotulo-card { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
     .valor-card { font-size: 1.4rem; font-weight: 800; word-break: break-word; }
-
     #card-entradas #valor-entradas { color: var(--success); }
     #card-saidas #valor-saidas { color: var(--danger); }
     #card-saldo #valor-saldo { color: var(--primary); }
 
     .grid-duplo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .grid-triplo { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media(max-width: 768px) { .grid-duplo { grid-template-columns: 1fr; } }
 
     .painel-box { background: var(--card-bg); padding: 18px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border-color); width: 100%; overflow: hidden; }
     .titulo-painel { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
@@ -72,7 +67,6 @@
     .secao-scanner-ia { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--card-bg) 100%); }
     #scanner-loading { display: none; margin-top: 12px; align-items: center; gap: 12px; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; color: var(--ai-purple); }
 
-    .secao-wishlist { border: 2px solid var(--ai-purple); background: linear-gradient(180deg, rgba(139, 92, 246, 0.03) 0%, var(--card-bg) 100%); }
     .grid-desejos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
     .card-desejo { background: var(--input-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
     .lojas-comparacao-box { display: flex; flex-direction: column; gap: 6px; background: var(--card-bg); padding: 8px; border-radius: 8px; border: 1px solid var(--border-color); }
@@ -90,7 +84,7 @@
     .btn-excluir { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.7rem; }
     .btn-analisar { background: var(--ai-gradient); color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; width: 100%; }
 
-    /* CHAT RESPONSIVO COM VOZ E ARQUIVO */
+    /* CHAT FLUENTE COM VOZ E PDF */
     #bolinha-ia-container { position: fixed; bottom: 20px; right: 20px; z-index: 40000; display: flex; flex-direction: column; align-items: flex-end; }
     #btn-bolinha-ia { width: 58px; height: 58px; border-radius: 50%; background: var(--ai-gradient); border: none; color: white; font-size: 1.5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(139, 92, 246, 0.4); display: flex; align-items: center; justify-content: center; }
     #janela-chat-ia { position: fixed; bottom: 90px; right: 20px; width: 360px; max-width: calc(100vw - 32px); height: 500px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 40001; display: none; flex-direction: column; overflow: hidden; }
@@ -172,7 +166,7 @@
 
   <div id="toast-container"></div>
 
-  <!-- DASHBOARD COMPLETO -->
+  <!-- DASHBOARD MASTER COMPLETO -->
   <div class="container" id="app-dashboard" style="display: none;">
     <header id="header-app">
       <h1 id="titulo-app">
@@ -225,8 +219,18 @@
       </section>
     </div>
 
+    <!-- PROJEÇÃO FINANCEIRA FUTURA -->
+    <section class="painel-box" style="border: 2px solid var(--primary);">
+      <h2 class="titulo-painel" style="color: var(--primary);"><span><i class="fa-solid fa-crystal-ball"></i> Projeção de Saldo Futuro</span></h2>
+      <div class="linha-dupla-inputs" style="margin-bottom: 12px;">
+        <div class="grupo-input"><label>Simular quantos meses à frente?</label><input type="number" id="input-meses-projecao" value="3" min="1" max="12"></div>
+        <div class="grupo-input" style="justify-content: flex-end;"><button type="button" onclick="carregarProjecao()"><i class="fa-solid fa-calculator"></i> Calcular Projeção</button></div>
+      </div>
+      <div id="resultado-projecao" style="font-size: 0.85rem; background: var(--input-bg); padding: 12px; border-radius: var(--radius-sm);">Clique em calcular para ver a projeção do saldo futuro.</div>
+    </section>
+
     <!-- LISTA DE DESEJOS COM COMPARADOR -->
-    <section class="painel-box secao-wishlist">
+    <section class="painel-box" style="border: 2px solid var(--ai-purple);">
       <h2 class="titulo-painel" style="color: var(--ai-purple);"><span><i class="fa-solid fa-cart-shopping"></i> Lista de Desejos & Comparador</span></h2>
       <div class="grid-duplo">
         <form id="form-desejo">
@@ -303,8 +307,7 @@
       e.preventDefault();
       try {
         const resp = await fetch(`${API_URL}/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: document.getElementById('login-email').value, senha: document.getElementById('login-senha').value })
         });
         const res = await resp.json();
@@ -320,8 +323,7 @@
       e.preventDefault();
       try {
         const resp = await fetch(`${API_URL}/ativar-licenca`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chave: document.getElementById('lic-chave').value,
             nome: document.getElementById('lic-nome').value,
@@ -396,6 +398,7 @@
         renderizarOrcamentos();
         renderizarDesejos();
         renderizarGraficoGeral();
+        carregarProjecao();
       } catch (err) { console.error(err); }
     }
 
@@ -408,6 +411,18 @@
       document.getElementById('valor-entradas').textContent = formatarMoeda(entradas);
       document.getElementById('valor-saidas').textContent = formatarMoeda(saidas);
       document.getElementById('valor-saldo').textContent = formatarMoeda(entradas - saidas);
+    }
+
+    async function carregarProjecao() {
+      const meses = document.getElementById('input-meses-projecao').value || 3;
+      try {
+        const resp = await fetch(`${API_URL}/projecao/${meses}?usuario_id=${usuarioLogado.id}`);
+        const p = await resp.json();
+        document.getElementById('resultado-projecao').innerHTML = `
+          Daqui a <strong>${p.periodo_meses} meses</strong>, considerando suas médias e contas pendentes, seu saldo projetado será de <strong style="color:${p.saldo_projetado_final>=0?'var(--success)':'var(--danger)'};">${formatarMoeda(p.saldo_projetado_final)}</strong>. 
+          (Entradas estimadas: ${formatarMoeda(p.entradas_estimadas)} | Saídas: ${formatarMoeda(p.saidas_estimadas)})
+        `;
+      } catch(e) {}
     }
 
     function renderizarTabelaExtrato() {
